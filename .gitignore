@@ -6,3 +6,7 @@
 
 # Ignore GIF files
 *.gif
+
+# Ignore Excel files
+*.xls
+*.xlsx
