@@ -1,0 +1,54 @@
+﻿PVObject_=pvModule
+  Version=8.0.9
+  Flags=$0543
+
+  PVObject_Commercial=pvCommercial
+    Comment=SolarEdge
+    Flags=$0041
+    Manufacturer=SolarEdge
+    Model=SPV375-R60JWMG
+    DataSource=Manufacturer ds 2025
+    YearBeg=2025
+    Width=1.038
+    Height=1.755
+    Depth=0.040
+    Weight=20.200
+    NPieces=100
+    PriceDate=30/09/20 09:39
+  End of PVObject pvCommercial
+
+  Technol=mtSiMono
+  NCelS=60
+  NCelP=2
+  NDiode=3
+  SubModuleLayout=slTwinHalfCells
+  GRef=1000
+  TRef=25.0
+  PNom=375.0
+  PNomTolLow=-3.00
+  PNomTolUp=3.00
+  BifacialityFactor=0.000
+  Isc=11.460
+  Voc=41.50
+  Imp=10.950
+  Vmp=34.28
+  muISC=5.45
+  muVocSpec=-143.5
+  muPmpReq=-0.309
+  RShunt=400
+  Rp_0=1600
+  Rp_Exp=5.50
+  RSerie=0.205
+  Gamma=0.981
+  muGamma=-0.0001
+  VMaxIEC=1000
+  VMaxUL=1000
+  Absorb=0.90
+  ARev=3.200
+  BRev=12.000
+  RDiode=0.010
+  VRevDiode=-0.70
+  AirMassRef=1.500
+  LIDLoss=2.50
+  SandiaAMCorr=50.000
+End of PVObject pvModule
