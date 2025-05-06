@@ -1,0 +1,4 @@
+Pmax value for system dummy_system_20250501_122911 is: 7848.850000000001
+Pmax value for system dummy_system_20250501_122911 is: 7418.060278274252
+Reconstructed solar edge case Pmax value for system dummy_system_20250501_122911 is: 7849.131459624582
+Reconstructed series connection case Pmax value for system dummy_system_20250501_122911 is: 7515.925823766539
