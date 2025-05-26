@@ -1,0 +1,3 @@
+Pmax value for system 25_05_26_Results is: 0
+
+Reconstructed solar edge case Pmax value for system 25_05_26_Results is: 0
