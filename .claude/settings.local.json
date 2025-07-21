@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__markitdown__convert_to_markdown",
+      "Bash(ls:*)",
+      "Bash(cp:*)",
+      "Bash(python:*)",
+      "Bash(pandoc:*)",
+      "Bash(rm:*)",
+      "WebFetch(domain:research-hub.nrel.gov)",
+      "WebFetch(domain:docs.nrel.gov)",
+      "WebFetch(domain:onlinelibrary.wiley.com)",
+      "Bash(grep:*)"
+    ],
+    "deny": []
+  }
+}
