@@ -35,6 +35,14 @@ Comprehensive analysis of generated results:
 - Analyzes correlation with climate zones, latitude, system size, and shading
 - Creates comparative visualizations before/after filtering diode activation events
 
+### 3. Daily Mismatch Analysis (`25_01_22_Daily_mismatch_analyser.py`)
+Optimized Python script for daily-granularity analysis:
+- Processes combined data files to extract daily mismatch metrics
+- Vectorized FFT calculations for improved performance
+- Cached geocoding to avoid repeated API calls
+- Generates daily summary Excel file and essential visualizations
+- Significantly faster execution than seasonal analysis for large datasets
+
 ## Data Structure
 
 **Site Data Organization:**
@@ -67,6 +75,47 @@ Data/{site_id}/
 - Dynamic thermal voltage calculation based on module temperature
 - Option to substitute ambient temperature for module temperature (`use_a_T = True`)
 
+## Commands and Execution
+
+**Running Analysis Scripts:**
+```bash
+# Execute daily mismatch analysis (optimized)
+python Code/25_01_22_Daily_mismatch_analyser.py
+
+# Run Jupyter notebooks (requires Jupyter installation)
+jupyter notebook Code/25_04_27_Mismatch_results_generator.ipynb
+jupyter notebook Code/25_05_01_Mismatch_results_analyser.ipynb
+
+# Install required dependencies (if not present)
+pip install pandas numpy matplotlib scipy pvlib geopy imageio
+pip install kgcpy  # Köppen-Geiger climate classification
+```
+
+**Development Environment Setup:**
+```bash
+# Optional: Create virtual environment
+python -m venv solar_analysis_env
+source solar_analysis_env/bin/activate  # Linux/Mac
+# or
+solar_analysis_env\Scripts\activate     # Windows
+
+# Install requirements
+pip install jupyter pandas numpy matplotlib scipy pvlib geopy imageio kgcpy
+```
+
+**File Management Commands:**
+```bash
+# Navigate to project directory
+cd "C:\Users\z5183876\OneDrive - UNSW\Documents\GitHub\24_09_24_Solar_Edge"
+
+# Check data structure
+ls Data/           # List all site folders
+ls Results/        # List analysis results
+
+# Monitor analysis progress (for long-running scripts)
+python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
+```
+
 ## Dependencies and Environment
 
 **Required Python Libraries:**
@@ -88,11 +137,13 @@ Data/{site_id}/
 2. Execute `25_05_01_Mismatch_results_analyser.ipynb` to analyze results
 3. Results automatically saved to timestamped folders in `Results/v_from_i_combined/`
 
-**Daily Analysis (New Workflow):**
-- See `daily_mismatch_analysis_instructions.md` for detailed specifications
+**Daily Analysis Workflow:**
+- Execute `25_01_22_Daily_mismatch_analyser.py` directly or import functions into notebooks
 - Implements daily-level granularity instead of seasonal aggregation
+- Optimized for performance with vectorized operations and caching
 - Output folder: `Results/daily_analysis_results/`
 - Requires same input data structure but processes at daily intervals
+- See `daily_mismatch_analysis_instructions.md` for detailed specifications
 
 **Processing New Site Data:**
 1. Add site folder to `Data/` with proper structure
@@ -109,6 +160,31 @@ Data/{site_id}/
 - Northern/Southern hemisphere seasons mapped automatically based on country
 - Month-to-season mapping handles seasonal data organization
 - Climate zone lookup uses geopy + Köppen-Geiger classification
+
+## Analysis Pipeline Architecture
+
+**Data Flow (Multi-File Architecture):**
+```
+Raw Telemetry Data (Data/{site_id}/) 
+    ↓
+Generator Notebook (25_04_27_*) → Processes I-V data → Results/v_from_i_combined/
+    ↓
+Analyzer Notebook (25_05_01_*) → Aggregates & analyzes → Statistical outputs
+    ↓
+Daily Script (25_01_22_*) → Daily granularity → Results/daily_analysis_results/
+```
+
+**Cross-File Dependencies:**
+- Generator notebook outputs become inputs for analyzer notebook
+- Daily script requires "no_diode" filtered files from generator
+- Site summary Excel file (`25_05_01_Newsites_summary.xlsx`) used across all workflows
+- Climate zone data cached and reused between analysis runs
+
+**Shared Analysis Components:**
+- Single-diode model parameters (.PAN files) used consistently across all analyses
+- FFT calculations implemented differently: full computation (generator) vs. optimized estimation (daily)
+- Outlier detection algorithms shared between analyzer notebook and daily script
+- Geocoding and climate classification standardized across workflows
 
 ## Key Functions and Analysis Logic
 
@@ -160,6 +236,27 @@ Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
 - Large datasets may require substantial memory for FFT analysis and plotting
 - GIF generation can be time-intensive for long time series
 - Climate zone lookup requires internet connectivity for geopy geocoding
+- Daily analysis script includes optimizations: vectorized operations, caching, reduced plotting
+- For very large datasets, consider using `SAMPLE_DAYS_LIMIT` parameter to limit processing
+
+## Testing and Validation
+
+**Data Validation Procedures:**
+- Cross-validation between seasonal aggregation and daily analysis results
+- Comparison of mismatch calculations before/after diode activation filtering
+- Verification that sum-of-MPP always exceeds series-connection power (physical constraint)
+- FFT period calculations validated against expected diurnal patterns
+
+**Output Validation:**
+- Excel exports checked for data completeness and format consistency
+- Plot generation verified across different data sizes and site configurations
+- Climate zone assignments cross-checked with geographic coordinates
+- Statistical summaries validated against manual calculations for sample datasets
+
+**Performance Validation:**
+- Daily analysis script timing compared against notebook execution
+- Memory usage monitoring for large dataset processing
+- Geocoding cache effectiveness measured by API call reduction
 
 ## Notes
 
