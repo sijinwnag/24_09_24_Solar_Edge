@@ -10,7 +10,9 @@
       "WebFetch(domain:research-hub.nrel.gov)",
       "WebFetch(domain:docs.nrel.gov)",
       "WebFetch(domain:onlinelibrary.wiley.com)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs"
     ],
     "deny": []
   }
