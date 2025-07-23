@@ -20,7 +20,9 @@
       "mcp__ide__executeCode",
       "Bash(dir:*)",
       "Bash(copy:*)",
-      "WebFetch(domain:www.nextracker.com)"
+      "WebFetch(domain:www.nextracker.com)",
+      "WebFetch(domain:apvi.org.au)",
+      "Bash(pip install:*)"
     ],
     "deny": []
   }

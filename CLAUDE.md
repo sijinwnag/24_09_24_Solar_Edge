@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a solar photovoltaic (PV) research project analyzing mismatch losses in SolarEdge systems. The project uses telemetry data from real solar installations to study power losses caused by module-level mismatches and bypass diode activation. The analysis combines theoretical modeling with empirical data to quantify mismatch losses across different seasons, climates, and system configurations.
 
+**Core Research Question**: How do module-level mismatches and bypass diode activation affect overall system power output in real-world SolarEdge installations?
+
+**Methodology**: Reconstruct I-V curves from MPP telemetry data using single-diode models, then compare sum-of-MPP vs. series-connection power to quantify mismatch losses.
+
 ## Repository Structure
 
 - **`Code/`** - Jupyter notebooks containing the main analysis workflows
@@ -70,10 +74,24 @@ Data/{site_id}/
 ```
 
 **Key Data Fields:**
-- `panel_current`, `panel_voltage` - MPP operating point
-- `panel_temperature`, `temperature` - Module and ambient temperature
-- `power` - Measured MPP power output
-- `reporter_id` - Unique optimizer identifier
+- `panel_current`, `panel_voltage` - MPP operating point from SolarEdge optimizers
+- `panel_temperature`, `temperature` - Module and ambient temperature (°C)
+- `power` - Measured MPP power output (W)
+- `reporter_id` - Unique optimizer identifier for tracking individual modules
+
+**PAN File Format (.PAN files contain module specifications):**
+```
+PVObject_=pvModule
+NCelS=66                    # Number of cells in series
+RSerie=0.209               # Series resistance (Ω) 
+RShunt=700                 # Shunt resistance (Ω)
+Gamma=0.976                # Ideality factor (dimensionless)
+Isc=11.160                 # Short-circuit current (A)
+Voc=45.06                  # Open-circuit voltage (V)
+Imp=10.640                 # MPP current (A)  
+Vmp=37.59                  # MPP voltage (V)
+PNom=400.0                 # Nominal power (W)
+```
 
 ## Analysis Parameters
 
@@ -89,28 +107,46 @@ Data/{site_id}/
 
 ## Commands and Execution
 
-**Running Analysis Scripts:**
+**Primary Analysis Workflow:**
 ```bash
-# Run main Jupyter notebooks (requires Jupyter installation)
+# Navigate to project root
+cd "C:\Users\z5183876\OneDrive - UNSW\Documents\GitHub\24_09_24_Solar_Edge"
+
+# 1. Generate mismatch results from raw telemetry data
 jupyter notebook Code/25_04_27_Mismatch_results_generator.ipynb
+
+# 2. Analyze generated results with statistical analysis
 jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
 
-# Run LTSpice simulation analysis
+# 3. (Optional) Validate theoretical predictions with LTSpice simulation
 jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
+```
 
-# For development environment focusing on bypass diode analysis
-cd Code/25_04_03_module_diode_activation_LTSpice/
-jupyter lab 25_07_22_PV_IV_Curve_Analysis.ipynb
-
-# Start Jupyter Lab for better notebook experience
+**Development Environment:**
+```bash
+# Start Jupyter Lab (recommended for development)
 jupyter lab
 
-# Install required dependencies (if not present)
-pip install pandas numpy matplotlib scipy pvlib geopy imageio openpyxl xlrd
-pip install kgcpy  # Köppen-Geiger climate classification
+# Alternative: Start Jupyter Notebook
+jupyter notebook
 
-# Additional dependencies for robust Excel handling
-pip install openpyxl xlrd  # Multiple Excel engines for compatibility
+# Install complete dependency stack
+pip install pandas numpy matplotlib scipy pvlib geopy imageio openpyxl xlrd kgcpy
+
+# For Windows users with permission issues (OneDrive), ensure robust Excel handling
+pip install --upgrade openpyxl xlrd
+```
+
+**Quick Testing Commands:**
+```bash
+# Test data loading for a single site
+python -c "import pandas as pd; print(pd.read_excel('Data/25_05_01_Newsites_summary.xlsx').head())"
+
+# Verify pvlib installation
+python -c "import pvlib; print(pvlib.__version__)"
+
+# Check if all required directories exist
+ls -la Data/ Results/ Code/
 ```
 
 **Development Environment Setup:**
@@ -173,10 +209,16 @@ python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
 3. Ensure .PAN file contains required parameters (RSerie, RShunt, NCelS, Gamma)
 
 **Configuration Variables (Generator Notebook):**
-- **Directory Paths**: `data_dir`, `base_dir`, `results_dir`, `summary_dir`
-- **Plot Limits**: `y_limit_module` (0,15), `x_limit_module` (0,60), `y_limit_inverter` (0,17), `x_limit_inverter` (0,1200)
-- **Temperature Settings**: `use_dynamic_vth` (thermal voltage calculation), `use_a_T` (ambient temperature substitution)
-- **Data Processing**: `num_days_to_plot` (default 10), `site_ids` list for target sites
+- **Site Selection**: `site_ids = ['4111846']` - Configure which sites to process
+- **Directory Paths**: `data_dir`, `base_dir`, `results_dir`, `summary_dir` - File system locations
+- **Analysis Period**: `num_days_to_plot = 10` - Limit processing time for large datasets
+- **Plot Boundaries**: 
+  - Module-level: `y_limit_module = (0,15)`, `x_limit_module = (0,60)`
+  - System-level: `y_limit_inverter = (0,17)`, `x_limit_inverter = (0,1200)`
+- **Physics Settings**: 
+  - `use_dynamic_vth = True` - Calculate thermal voltage from actual temperature
+  - `use_a_T = True` - Use ambient temperature when module temperature sensors appear faulty
+- **Seasonal Mapping**: Automatic Northern/Southern hemisphere season detection based on country
 
 **Standardized Plotting Parameters (Applied Across All Notebooks):**
 - **Font Sizes**: `axis_label_size` (20), `axis_num_size` (20), `title_size` (22), `text_size` (20)
@@ -191,20 +233,69 @@ python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
 
 ## Analysis Pipeline Architecture
 
-**Data Flow (Multi-File Architecture):**
-```
-Raw Telemetry Data (Data/{site_id}/) 
-    ↓
-Generator Notebook (25_04_27_*) → Processes I-V data → Results/v_from_i_combined/
-    ↓
-Analyzer Notebook (25_07_22_*) → Aggregates & analyzes → Statistical outputs
-    ├── Section 6: Daily analysis → Results/daily_analysis_results/
+**High-Level System Architecture:**
+The analysis pipeline consists of three main components working together:
+1. **Data Processing Engine**: Reconstructs I-V curves from MPP telemetry using single-diode models
+2. **Statistical Analysis Engine**: Aggregates results across sites, seasons, and climates with outlier detection
+3. **Theoretical Validation Engine**: LTSpice-based circuit simulation to validate empirical findings
 
-LTSpice Simulation Data (25_04_04_bypass.xlsx)
+**Data Flow Architecture:**
+```
+Raw Telemetry Data (Data/{site_id}/)
+├── {site_id}.PAN files (module parameters)
+├── {season}/optimizer_data.csv (I,V,T,P per optimizer)
+├── {season}/inverter_data.csv (system-level data) 
+└── {season}/site_daily_data.csv (daily aggregates)
     ↓
-PV I-V Analysis (25_07_22_PV_IV_Curve_Analysis.ipynb) → Bypass diode validation
-    ↓ 
-Validates theoretical predictions (34.7%/41.8% power losses) → Integration with empirical analysis
+Generator Notebook (25_04_27_Mismatch_results_generator.ipynb)
+├── I-V Curve Reconstruction Engine
+│   ├── Single-diode parameter calculation (I0, IL functions)
+│   ├── pvlib.pvsystem.v_from_i() integration
+│   └── Series voltage summation for system curves
+├── Mismatch Loss Calculator
+│   ├── Sum-of-MPP calculation (individual optimizer products)
+│   ├── Series-connection MPP extraction
+│   └── Percentage difference: (Sum_MPP - Series_MPP)/Sum_MPP * 100
+└── Timestamped Results Output
+    ├── combined_data_{season}_{site_id}.xlsx
+    ├── module_param_df.csv (I0, Isc, Voc, FF, Pmp per optimizer)
+    ├── Animated GIFs showing I-V evolution
+    └── Time-series plots and statistical summaries
+    ↓
+Results/v_from_i_combined/{site_id}_{season}_{timestamp}/
+    ↓
+Analyzer Notebook (25_07_22_Mismatch_results_analyser.ipynb)
+├── Cross-Site Statistical Analysis
+│   ├── Climate zone integration (Köppen-Geiger via kgcpy)
+│   ├── Geographic correlation analysis (latitude, longitude)
+│   └── System configuration impact (orientation, shading, size)
+├── Bypass Diode Detection Engine
+│   ├── Outlier detection: IQR-based Voc/Isc filtering
+│   ├── Diode activation patterns: Voc loss without Isc change
+│   └── "no_diode" filtered datasets for true mismatch analysis
+├── Section 6: Daily Analysis Subsystem
+│   ├── Daily-level granularity processing
+│   ├── Vectorized operations for performance
+│   └── Excel output: daily_mismatch_summary.xlsx (20 columns)
+└── Comparative Visualizations
+    ├── Before/after diode filtering comparisons
+    ├── Seasonal and climate zone correlations
+    └── System parameter impact analysis
+
+Parallel Validation Track:
+LTSpice Simulation Data (25_04_04_bypass.xlsx)
+├── 4,851 I-V data points (normal/1-diode/2-diode scenarios)
+├── 0-48.5V range with Bomen Solar Farm specifications
+└── 72-cell module circuit models with bypass diodes
+    ↓
+PV I-V Analysis (25_07_22_PV_IV_Curve_Analysis.ipynb)
+├── Robust Excel Loading (OneDrive permission handling)
+├── MPP Detection and Power Loss Quantification
+├── Publication-Quality Plotting Parameters
+└── Theoretical Validation: 34.7% (1 diode), 41.8% (2 diodes)
+    ↓
+Integration with Empirical Analysis
+└── Cross-validation of bypass diode power loss predictions
 ```
 
 **Cross-File Dependencies:**
@@ -219,26 +310,41 @@ Validates theoretical predictions (34.7%/41.8% power losses) → Integration wit
 - Outlier detection algorithms shared between analyzer notebook and daily analysis section
 - Geocoding and climate classification standardized across workflows
 
-## Key Functions and Analysis Logic
+## Core Analysis Logic and Functions
 
-**Core Architecture Components:**
+**Critical Function Architecture:**
 
-**I-V Curve Reconstruction:**
-- `I0()` and `IL()` functions calculate diode model parameters from MPP data
-- `pvlib.pvsystem.v_from_i()` generates full I-V curves using single-diode model
-- Series combination sums voltages at constant current for system-level analysis
+**Single-Diode Model Parameter Extraction (`Code/25_04_27_Mismatch_results_generator.ipynb`):**
+```python
+def I0(I, V, Rs, Rsh, n, N, vth):
+    """Calculate dark saturation current from MPP data"""
+    # Implements: I0 = [I*(1+Rs/Rsh) - V/Rsh] / [1 - I*Rs/V] * (n*N*vth/V) * exp(-(V+I*Rs)/(n*N*vth))
 
-**Data Processing Pipeline:**
-1. **Data Loading**: Multiple CSV format support with automatic timestamp synchronization
-2. **Parameter Extraction**: .PAN file parsing for module-specific parameters (Rs, Rsh, n, Ncells)
-3. **I-V Reconstruction**: Single-diode model parameter calculation for each optimizer
-4. **Series Combination**: Voltage summation at constant current to create system I-V curve
-5. **Mismatch Calculation**: Power comparison between sum-of-MPP and series-connection
-
-**Mismatch Loss Calculation:**
+def IL(I, V, Rs, Rsh, n, N, vth, I0):
+    """Calculate light-generated current from MPP data and I0"""
+    # Implements: IL = I*(1+Rs/Rsh) + V/Rsh + I0*(exp((V+I*Rs)/(n*N*vth)) - 1)
 ```
-Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
+
+**I-V Curve Reconstruction Pipeline:**
+1. **Parameter Extraction**: Extract Rs, Rsh, n, Ncells from .PAN files using text parsing
+2. **Thermal Voltage Calculation**: `vth = k*T/q` (dynamic) or constant at 25°C
+3. **Diode Parameter Calculation**: Use measured MPP (I,V) to solve for I0 and IL
+4. **Full Curve Generation**: `pvlib.pvsystem.v_from_i(current_array, IL, I0, Rs, Rsh, n*N*vth)`
+5. **Series Combination**: Sum voltages at constant current across all optimizers
+
+**Mismatch Loss Calculation Engine:**
+The core research contribution - quantifying power losses from module-level mismatches:
+
+```python
+# Two power calculations compared:
+sum_of_mpp = sum(Vi * Ii for all optimizers i)  # Independent operation
+series_mpp = max(Vseries * I) where Vseries = sum(Vi(I))  # Series constraint
+
+# Mismatch loss percentage:
+mismatch_loss = (sum_of_mpp - series_mmp) / sum_of_mpp * 100
 ```
+
+**Key Insight**: Series-connected modules operate at the same current, forcing higher-performing modules to operate below their individual MPP, creating mismatch losses.
 
 **Data Quality Filtering:**
 - Removes timestamps where all optimizers report zero power
@@ -261,15 +367,51 @@ Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
 - Impact of shading and multi-orientation configurations
 - Quantification of diode activation frequency and impact
 
-## Troubleshooting and Data Quality
+## Troubleshooting and Development Guide
 
-**Common Data Issues:**
-- Missing or corrupted .PAN files: Ensure all required parameters (RSerie, RShunt, NCelS, Gamma) are present
-- Inconsistent timestamp formats: Multiple formats supported in data loading (`%Y-%m-%d %H:%M:%S`, `%d/%m/%Y %H:%M`, etc.)
-- Zero power readings: Automatically filtered out in analysis (all optimizers reporting zero power)
-- Temperature sensor issues: Use `use_a_T = True` to substitute ambient for module temperature if module readings seem unrealistic
-- **Excel Permission Issues**: LTSpice notebook includes robust loading with temporary file method for OneDrive/permission problems
-- **Variable Name Errors**: Historical `mmp_*` vs `mpp_*` naming issues have been resolved in all analysis notebooks
+**Common Data Issues and Solutions:**
+
+**1. Missing/Corrupted .PAN Files:**
+```python
+# Check required parameters exist:
+required_params = ['RSerie', 'RShunt', 'NCelS', 'Gamma']
+# PAN files use text parsing - ensure exact spelling matches
+```
+
+**2. Timestamp Synchronization Problems:**
+```python
+# Multiple formats supported automatically:
+timestamp_formats = ["%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M", "%m/%d/%Y %H:%M"]
+# Data synchronized to 5-minute intervals across all optimizers
+```
+
+**3. Zero Power Data Filtering:**
+```python
+# Automatically filters timestamps where ALL optimizers report zero power
+all_power_zero = all(power_optimizer_i == 0 for all optimizers)
+if all_power_zero: continue  # Skip timestep
+```
+
+**4. Temperature Sensor Issues:**
+```python
+# Use ambient temperature when module sensors appear faulty
+use_a_T = True  # Replaces panel_temperature with temperature
+# Check for unrealistic module temperatures (>80°C in normal conditions)
+```
+
+**5. Excel Permission Issues (OneDrive):**
+```python
+# LTSpice notebook uses temporary file method:
+import tempfile, shutil
+temp_file = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+shutil.copy2(original_path, temp_file.name)
+df = pd.read_excel(temp_file.name)
+```
+
+**6. Memory Issues with Large Datasets:**
+- Reduce `num_days_to_plot` from 10 to 3-5 days
+- Process sites individually rather than in batch
+- Use vectorized operations in daily analysis (Section 6)
 
 **File Structure Requirements:**
 - Each site must have properly named seasonal/monthly subfolders
@@ -285,25 +427,52 @@ Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
 - For very large datasets, consider using `num_days_to_plot` parameter to limit processing time
 - Plotting parameters can be adjusted for performance: `figure_size`, `y_limit_module`, `x_limit_module`
 
-## Testing and Validation
+## Statistical Analysis and Validation Framework
 
-**Data Validation Procedures:**
-- Cross-validation between seasonal aggregation and daily analysis results
-- Comparison of mismatch calculations before/after diode activation filtering
-- Verification that sum-of-MPP always exceeds series-connection power (physical constraint)
-- FFT period calculations validated against expected diurnal patterns
+**Bypass Diode Detection Algorithm (`25_07_22_Mismatch_results_analyser.ipynb`):**
+```python
+# IQR-based outlier detection for diode activation:
+def detect_diode_activation(voc_data, isc_data):
+    # Voc outliers: IQR factor 1.5 for high values, percentile-based for losses
+    voc_q1, voc_q3 = np.percentile(voc_data, [25, 75])
+    voc_iqr = voc_q3 - voc_q1
+    voc_outliers = (voc_data > voc_q3 + 1.5*voc_iqr) | (voc_data < voc_q1 - 1.5*voc_iqr)
+    
+    # Isc outliers: IQR factor 1.5 (low) and 3.0 (high) with minimum IQR enforcement  
+    isc_q1, isc_q3 = np.percentile(isc_data, [25, 75])
+    isc_iqr = max(isc_q3 - isc_q1, min_iqr_threshold)
+    isc_outliers = (isc_data < isc_q1 - 1.5*isc_iqr) | (isc_data > isc_q3 + 3.0*isc_iqr)
+    
+    # Diode activation: Voc loss without Isc change, or Voc high + Isc low
+    return voc_outliers | isc_outliers
+```
 
-**Output Validation:**
-- Excel exports checked for data completeness and format consistency
-- Plot generation verified across different data sizes and site configurations
-- Climate zone assignments cross-checked with geographic coordinates
-- Statistical summaries validated against manual calculations for sample datasets
+**Climate Zone Integration:**
+```python
+# Köppen-Geiger climate classification using kgcpy library:
+from geopy.geocoders import Nominatim
+from kgcpy import lookupCZ
 
-**Performance Validation:**
-- Daily analysis section timing optimizations within notebook execution
-- Memory usage monitoring for large dataset processing
-- Geocoding cache effectiveness measured by API call reduction
-- I-V curve reconstruction accuracy validated against measured MPP data
+def get_climate_zone(address):
+    geolocator = Nominatim(user_agent="solar_analysis")
+    location = geolocator.geocode(address)
+    if location:
+        return lookupCZ(location.latitude, location.longitude)
+    return None
+```
+
+**Cross-Site Statistical Validation:**
+- **Physical Constraint**: `sum_of_mpp >= series_mpp` always (verified computationally)
+- **Diurnal Pattern Validation**: FFT analysis confirms expected solar irradiance cycles
+- **Geographic Correlation**: Latitude vs. mismatch loss correlation analysis
+- **Climate Zone Impact**: Köppen-Geiger classification impact on seasonal variations
+- **System Configuration**: Shading, orientation, and size impact quantification
+
+**Theoretical Validation via LTSpice:**
+- **34.7% power loss** with 1 bypass diode activated (validated against 4,851 simulation points)
+- **41.8% power loss** with 2 bypass diodes activated 
+- **Progressive degradation patterns** match empirical SolarEdge observations
+- **Voltage shift analysis** confirms bypass diode activation signatures
 
 ## Code Quality and Recent Improvements
 
