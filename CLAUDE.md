@@ -28,20 +28,32 @@ Primary workflow for processing raw telemetry data:
 - Compares sum-of-MPP vs series-connection power to quantify mismatch losses
 - Generates time-series plots and exports results to Excel
 
-### 2. Mismatch Results Analysis (`25_05_01_Mismatch_results_analyser.ipynb`)
+### 2. Mismatch Results Analysis (`25_07_22_Mismatch_results_analyser.ipynb`)
 Comprehensive analysis of generated results:
 - Aggregates mismatch data across sites and seasons
 - Performs outlier detection for Voc/Isc to identify bypass diode activation
 - Analyzes correlation with climate zones, latitude, system size, and shading
 - Creates comparative visualizations before/after filtering diode activation events
 
-### 3. Daily Mismatch Analysis (`25_01_22_Daily_mismatch_analyser.py`)
-Optimized Python script for daily-granularity analysis:
-- Processes combined data files to extract daily mismatch metrics
-- Vectorized FFT calculations for improved performance
-- Cached geocoding to avoid repeated API calls
-- Generates daily summary Excel file and essential visualizations
+### 3. Daily Mismatch Analysis (Section 6 of Analyzer Notebook)
+Daily analysis functionality integrated within the main analyzer notebook:
+- Available as Section 6 in `25_07_22_Mismatch_results_analyser.ipynb`
+- Processes combined "no_diode" filtered data files to extract daily mismatch metrics
+- Generates daily summary Excel file (daily_mismatch_summary.xlsx) with 20 columns
+- Streamlined for core Excel output without visualization or caching overhead
 - Significantly faster execution than seasonal analysis for large datasets
+
+### 4. LTSpice Bypass Diode Simulation Analysis (`25_04_03_module_diode_activation_LTSpice/`)
+Physics-based circuit simulation for bypass diode validation:
+- **LTSpice Circuit Files**: `.asc` files modeling 72-cell module with bypass diodes based on Bomen Solar Farm specifications
+- **Simulation Data**: `25_04_04_bypass.xlsx` containing 4,851 I-V data points for normal/1-diode/2-diode scenarios (0-48.5V range)
+- **Primary Analysis Tool**: `25_07_22_PV_IV_Curve_Analysis.ipynb` - Comprehensive analysis with:
+  - Robust Excel loading (handles OneDrive permission issues using temporary file method)
+  - Maximum Power Point (MPP) detection and analysis
+  - Power loss quantification (validates 34.7% loss for 1 diode, 41.8% for 2 diodes)
+  - Publication-quality plotting with consistent formatting parameters
+- **Research Integration**: Validates theoretical bypass diode effects against empirical SolarEdge data
+- **Key Findings**: Progressive power degradation, voltage shift patterns, fill factor impact
 
 ## Data Structure
 
@@ -79,16 +91,26 @@ Data/{site_id}/
 
 **Running Analysis Scripts:**
 ```bash
-# Execute daily mismatch analysis (optimized)
-python Code/25_01_22_Daily_mismatch_analyser.py
-
-# Run Jupyter notebooks (requires Jupyter installation)
+# Run main Jupyter notebooks (requires Jupyter installation)
 jupyter notebook Code/25_04_27_Mismatch_results_generator.ipynb
-jupyter notebook Code/25_05_01_Mismatch_results_analyser.ipynb
+jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
+
+# Run LTSpice simulation analysis
+jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
+
+# For development environment focusing on bypass diode analysis
+cd Code/25_04_03_module_diode_activation_LTSpice/
+jupyter lab 25_07_22_PV_IV_Curve_Analysis.ipynb
+
+# Start Jupyter Lab for better notebook experience
+jupyter lab
 
 # Install required dependencies (if not present)
-pip install pandas numpy matplotlib scipy pvlib geopy imageio
+pip install pandas numpy matplotlib scipy pvlib geopy imageio openpyxl xlrd
 pip install kgcpy  # Köppen-Geiger climate classification
+
+# Additional dependencies for robust Excel handling
+pip install openpyxl xlrd  # Multiple Excel engines for compatibility
 ```
 
 **Development Environment Setup:**
@@ -121,9 +143,10 @@ python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
 **Required Python Libraries:**
 - Core: `pandas`, `numpy`, `matplotlib`, `scipy`
 - Solar modeling: `pvlib`
-- Geographic: `geopy`, `kgcpy` (Köppen-Geiger climate classification)
+- Geographic: `geopy`, `kgcpy` (Köppen-Geiger climate classification) 
 - Data processing: `imageio` (for GIF generation)
-- Standard: `os`, `sys`, `datetime`, `json`, `requests`
+- Excel handling: `openpyxl`, `xlrd` (multiple engines for robust file access)
+- Standard: `os`, `sys`, `datetime`, `json`, `requests`, `pathlib`, `shutil`, `tempfile`
 
 **Development Environment:**
 - Jupyter notebooks are the primary development interface
@@ -134,16 +157,15 @@ python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
 
 **Running Complete Analysis:**
 1. Execute `25_04_27_Mismatch_results_generator.ipynb` to process raw data
-2. Execute `25_05_01_Mismatch_results_analyser.ipynb` to analyze results
+2. Execute `25_07_22_Mismatch_results_analyser.ipynb` to analyze results (includes Section 6 for daily analysis)
 3. Results automatically saved to timestamped folders in `Results/v_from_i_combined/`
 
 **Daily Analysis Workflow:**
-- Execute `25_01_22_Daily_mismatch_analyser.py` directly or import functions into notebooks
+- Use Section 6 of `25_07_22_Mismatch_results_analyser.ipynb` for daily analysis
 - Implements daily-level granularity instead of seasonal aggregation
-- Optimized for performance with vectorized operations and caching
-- Output folder: `Results/daily_analysis_results/`
-- Requires same input data structure but processes at daily intervals
-- See `daily_mismatch_analysis_instructions.md` for detailed specifications
+- Output folder: `Results/daily_analysis_results/` (contains daily_mismatch_summary.xlsx)
+- Requires "no_diode" filtered combined data files from generator notebook
+- Includes optimizations: vectorized operations, caching, reduced plotting
 
 **Processing New Site Data:**
 1. Add site folder to `Data/` with proper structure
@@ -151,10 +173,16 @@ python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
 3. Ensure .PAN file contains required parameters (RSerie, RShunt, NCelS, Gamma)
 
 **Configuration Variables (Generator Notebook):**
-- Modify `data_dir`, `base_dir`, `summary_dir` paths as needed
-- Adjust plot limits: `y_limit_module`, `x_limit_module`, `y_limit_inverter`, `x_limit_inverter`
-- Toggle temperature calculation: `use_dynamic_vth`, `use_a_T`
-- Plotting parameters: `axis_label_size`, `title_size`, `figure_size`
+- **Directory Paths**: `data_dir`, `base_dir`, `results_dir`, `summary_dir`
+- **Plot Limits**: `y_limit_module` (0,15), `x_limit_module` (0,60), `y_limit_inverter` (0,17), `x_limit_inverter` (0,1200)
+- **Temperature Settings**: `use_dynamic_vth` (thermal voltage calculation), `use_a_T` (ambient temperature substitution)
+- **Data Processing**: `num_days_to_plot` (default 10), `site_ids` list for target sites
+
+**Standardized Plotting Parameters (Applied Across All Notebooks):**
+- **Font Sizes**: `axis_label_size` (20), `axis_num_size` (20), `title_size` (22), `text_size` (20)
+- **Figure Sizes**: `figure_size` (6,6), `long_hoz_figsize` (12,6), `two_by_two_figsize` (12,12)
+- **Publication Quality**: All notebooks use consistent formatting for professional output
+- **LTSpice Enhanced**: Uses larger parameters for bypass diode analysis visualization
 
 **Seasonal Analysis:**
 - Northern/Southern hemisphere seasons mapped automatically based on country
@@ -169,39 +197,54 @@ Raw Telemetry Data (Data/{site_id}/)
     ↓
 Generator Notebook (25_04_27_*) → Processes I-V data → Results/v_from_i_combined/
     ↓
-Analyzer Notebook (25_05_01_*) → Aggregates & analyzes → Statistical outputs
+Analyzer Notebook (25_07_22_*) → Aggregates & analyzes → Statistical outputs
+    ├── Section 6: Daily analysis → Results/daily_analysis_results/
+
+LTSpice Simulation Data (25_04_04_bypass.xlsx)
     ↓
-Daily Script (25_01_22_*) → Daily granularity → Results/daily_analysis_results/
+PV I-V Analysis (25_07_22_PV_IV_Curve_Analysis.ipynb) → Bypass diode validation
+    ↓ 
+Validates theoretical predictions (34.7%/41.8% power losses) → Integration with empirical analysis
 ```
 
 **Cross-File Dependencies:**
-- Generator notebook outputs become inputs for analyzer notebook
-- Daily script requires "no_diode" filtered files from generator
+- Generator notebook outputs become inputs for analyzer notebook  
+- Daily analysis (Section 6) requires "no_diode" filtered files from generator
 - Site summary Excel file (`25_05_01_Newsites_summary.xlsx`) used across all workflows
 - Climate zone data cached and reused between analysis runs
 
 **Shared Analysis Components:**
 - Single-diode model parameters (.PAN files) used consistently across all analyses
-- FFT calculations implemented differently: full computation (generator) vs. optimized estimation (daily)
-- Outlier detection algorithms shared between analyzer notebook and daily script
+- FFT calculations implemented differently: full computation (generator) vs. optimized estimation (daily analysis)
+- Outlier detection algorithms shared between analyzer notebook and daily analysis section
 - Geocoding and climate classification standardized across workflows
 
 ## Key Functions and Analysis Logic
 
+**Core Architecture Components:**
+
 **I-V Curve Reconstruction:**
 - `I0()` and `IL()` functions calculate diode model parameters from MPP data
-- `pvlib.pvsystem.v_from_i()` generates full I-V curves
-- Series combination sums voltages at constant current
+- `pvlib.pvsystem.v_from_i()` generates full I-V curves using single-diode model
+- Series combination sums voltages at constant current for system-level analysis
 
-**Mismatch Calculation:**
+**Data Processing Pipeline:**
+1. **Data Loading**: Multiple CSV format support with automatic timestamp synchronization
+2. **Parameter Extraction**: .PAN file parsing for module-specific parameters (Rs, Rsh, n, Ncells)
+3. **I-V Reconstruction**: Single-diode model parameter calculation for each optimizer
+4. **Series Combination**: Voltage summation at constant current to create system I-V curve
+5. **Mismatch Calculation**: Power comparison between sum-of-MPP and series-connection
+
+**Mismatch Loss Calculation:**
 ```
 Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
 ```
 
 **Data Quality Filtering:**
 - Removes timestamps where all optimizers report zero power
-- Filters out diode activation events for "true" mismatch analysis
+- Filters out diode activation events for "true" mismatch analysis  
 - Handles missing data with appropriate NaN treatment
+- Temperature sensor validation and optional ambient temperature substitution (`use_a_T = True`)
 
 ## Results and Visualization
 
@@ -225,6 +268,8 @@ Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
 - Inconsistent timestamp formats: Multiple formats supported in data loading (`%Y-%m-%d %H:%M:%S`, `%d/%m/%Y %H:%M`, etc.)
 - Zero power readings: Automatically filtered out in analysis (all optimizers reporting zero power)
 - Temperature sensor issues: Use `use_a_T = True` to substitute ambient for module temperature if module readings seem unrealistic
+- **Excel Permission Issues**: LTSpice notebook includes robust loading with temporary file method for OneDrive/permission problems
+- **Variable Name Errors**: Historical `mmp_*` vs `mpp_*` naming issues have been resolved in all analysis notebooks
 
 **File Structure Requirements:**
 - Each site must have properly named seasonal/monthly subfolders
@@ -236,8 +281,9 @@ Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
 - Large datasets may require substantial memory for FFT analysis and plotting
 - GIF generation can be time-intensive for long time series
 - Climate zone lookup requires internet connectivity for geopy geocoding
-- Daily analysis script includes optimizations: vectorized operations, caching, reduced plotting
-- For very large datasets, consider using `SAMPLE_DAYS_LIMIT` parameter to limit processing
+- Daily analysis (Section 6) includes optimizations: vectorized operations, caching, reduced plotting
+- For very large datasets, consider using `num_days_to_plot` parameter to limit processing time
+- Plotting parameters can be adjusted for performance: `figure_size`, `y_limit_module`, `x_limit_module`
 
 ## Testing and Validation
 
@@ -254,9 +300,27 @@ Mismatch Loss (%) = (Sum_of_MPP - Series_MPP) / Sum_of_MPP × 100
 - Statistical summaries validated against manual calculations for sample datasets
 
 **Performance Validation:**
-- Daily analysis script timing compared against notebook execution
+- Daily analysis section timing optimizations within notebook execution
 - Memory usage monitoring for large dataset processing
 - Geocoding cache effectiveness measured by API call reduction
+- I-V curve reconstruction accuracy validated against measured MPP data
+
+## Code Quality and Recent Improvements
+
+**Resolved Issues (July 2025):**
+- **Variable Naming Consistency**: All `mmp_*` variable references corrected to `mpp_*` across notebooks
+- **Excel Loading Robustness**: LTSpice notebook now handles OneDrive permission issues with temporary file method
+- **Plot Formatting Standardization**: Enhanced formatting parameters applied for publication-quality output
+- **Error Handling**: Comprehensive error handling for missing files, corrupted data, and permission issues
+
+**Backup Strategy:**
+- Critical notebook backups created before major modifications (e.g., `25_07_22_PV_IV_Curve_Analysis_backup.ipynb`)
+- Version control through file naming with dates for analysis notebooks
+
+**Testing and Validation:**
+- All key analysis functions tested with synthetic and real data
+- Cross-validation between theoretical LTSpice predictions and empirical results
+- Data loading robustness validated across different file systems and permission scenarios
 
 ## Notes
 

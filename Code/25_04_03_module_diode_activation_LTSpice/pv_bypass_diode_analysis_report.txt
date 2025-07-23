@@ -1,0 +1,33 @@
+PV MODULE BYPASS DIODE ANALYSIS REPORT
+==================================================
+
+Analysis Date: 2025-07-23 11:47:28
+Data Points: 4851 voltage/current measurements
+Voltage Range: 0.000V to 48.500V
+
+MAXIMUM POWER POINT SUMMARY:
+------------------------------
+Normal:
+  Power: 392.7W (+0.0%)
+  Voltage: 40.66V
+  Current: 9.66A
+  Fill Factor: 0.801
+
+1 Diode:
+  Power: 256.5W (+34.7%)
+  Voltage: 26.60V
+  Current: 9.64A
+  Fill Factor: 0.523
+
+2 Diodes:
+  Power: 228.5W (+41.8%)
+  Voltage: 45.76V
+  Current: 4.99A
+  Fill Factor: 0.466
+
+KEY FINDINGS:
+---------------
+• Single bypass diode activation causes 34.7% power loss
+• Two bypass diodes activation causes 41.8% power loss
+• Progressive power degradation with additional diode activation
+• Maximum voltage shift: 14.1V

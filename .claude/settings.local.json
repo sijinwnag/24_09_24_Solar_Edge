@@ -14,7 +14,13 @@
       "mcp__context7__resolve-library-id",
       "mcp__context7__get-library-docs",
       "Bash(mv:*)",
-      "Bash(dir \"C:\\Users\\z5183876\\OneDrive - UNSW\\Documents\\GitHub\\24_09_24_Solar_Edge\\Results\\daily_analysis_results\\daily_mismatch_summary.xlsx\")"
+      "Bash(dir \"C:\\Users\\z5183876\\OneDrive - UNSW\\Documents\\GitHub\\24_09_24_Solar_Edge\\Results\\daily_analysis_results\\daily_mismatch_summary.xlsx\")",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "mcp__ide__executeCode",
+      "Bash(dir:*)",
+      "Bash(copy:*)",
+      "WebFetch(domain:www.nextracker.com)"
     ],
     "deny": []
   }

@@ -1,0 +1,22 @@
+LTspice 24.1.8 for Windows
+Circuit: C:\Users\z5183876\OneDrive - UNSW\Documents\LTspice\25_04_03_module_diode_activation\24_09_10_Bomen_Module_2_shaded.net
+Start Time: Thu May 15 22:40:33 2025
+solver = Normal
+Maximum thread count: 18
+tnom = 27
+temp = 0
+method = trap
+.step temp=0°
+.step temp=10°
+.step temp=20°
+.step temp=30°
+.step temp=40°
+.step temp=50°
+.step temp=60°
+.step temp=70°
+Total elapsed time: 1.481 seconds.
+
+Files loaded:
+C:\Users\z5183876\OneDrive - UNSW\Documents\LTspice\25_04_03_module_diode_activation\24_09_10_Bomen_Module_2_shaded.net
+C:\Users\z5183876\AppData\Local\LTspice\lib\cmp\standard.dio
+
