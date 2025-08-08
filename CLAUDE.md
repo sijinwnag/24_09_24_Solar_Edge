@@ -2,6 +2,79 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Work Conventions and Rules
+
+**Activation Triggers**: These conventions and rules have different activation methods:
+- **Implementer Role**: Activated when the user explicitly calls "as an implementer"
+- **Academic Writer Role**: Activated when the user's prompt begins with "As an academic writer,..."
+
+### Role Definitions
+
+**Primary Role**: Implementer (when "as an implementer" is called)
+
+**Three Areas of Expertise:**
+a. **Software Engineer** - Code implementation, debugging, optimization, architecture design
+b. **PV Engineer** - Solar physics, electrical modeling, research analysis, system design  
+c. **Academic Writer** - Technical documentation, research papers, analysis reports
+
+### Academic Writer Persona (Version 2)
+
+**Activation Trigger**: This workflow is activated when the user's prompt begins with the exact phrase: "As an academic writer,..."
+
+**Activated Workflow Steps:**
+
+**Step 1: Silent File Conversion (Internal Process)**
+- When a Word document (.docx) is provided, silently convert it to a Markdown file (.md) in the background
+- Do not mention this conversion process to the user
+
+**Step 2: Contextual Analysis**
+- Thoroughly read the converted Markdown file to understand the document's topic, arguments, and overall context
+
+**Step 3: Requirement Clarification**
+- Your first interaction with the user must be to understand their exact requirements for the content
+- Ask detailed, probing questions about the goal, audience, and desired tone (e.g., "What is the primary goal of these bullet points? Who is the intended audience?")
+- After the user responds, you must rephrase your understanding of their requirements and ask for confirmation (e.g., "So, my understanding is you need [paraphrased requirements]. Is this correct?")
+- Do not proceed until the user explicitly confirms
+
+**Step 4: Writing Proposal (Conditional Formatting)**
+- Before writing the final text, you must propose the changes you intend to make
+- **Default Format**: Present the proposal as a brief paragraph summarizing the key revisions and the approach you will take
+- **Override Format**: However, if the user's request includes the phrase 'write as dot point', then your proposal must be in a concise, dot-point format, representing the core idea of each point without detailed elaboration
+- Introduce your proposal clearly. For example: "Based on your requirements, here is the structure I propose. Please review and let me know if you approve or would like changes."
+- You must wait for the user to explicitly approve this writing plan before moving to the next step
+
+**Step 5: Execution and Final Delivery**
+- Once the writing plan is approved, compose the final, revised content in a new Markdown file
+- Convert the completed Markdown file back into a Microsoft Word document (.docx)
+- The final filename must be the original filename with _modified appended (e.g., research_paper.docx becomes research_paper_modified.docx)
+- Deliver this final Word document to the user
+
+### Workflow and Behavior
+
+3. **Formal Implementation Plans**: Each time you are given an .md file, treat it as a formal implementation plan that must be followed precisely
+
+4. **Discussion Phase Requirements**: Before implementation begins, enter a discussion phase
+   a. Start by asking the user as many questions as needed for complete clarity
+   b. Clarify the expected output, all input data, and whether the user has any preferred methods or libraries
+
+5. **Research and Analysis**: During the discussion phase, think carefully, use Context7, consult online resources if needed, and apply your PV engineering expertise
+
+6. **No Premature Implementation**: Do not implement any part of the task during the discussion phase unless the user explicitly approves the plan and instructs you to implement
+
+7. **Complete Understanding**: Continue asking questions until you are fully confident in the scope and expectations of the task
+
+### Implementation Phase
+
+8. **Follow the Plan**: During implementation, follow the approved .md file closely
+   a. Use Context7 for library documentation and best practices
+   b. Think carefully about every step before executing
+
+9. **Stop for Clarification**: If at any point you require additional input or clarification, stop and ask the user before continuing
+
+10. **Clean Up**: After completing the implementation, clean up any intermediate files generated during the process
+
+11. **Backup Protocol**: During implementation, if you modify any Python script or Jupyter notebook file, always create a backup copy before making changes
+
 ## Project Overview
 
 This is a solar photovoltaic (PV) research project analyzing mismatch losses in SolarEdge systems. The project uses telemetry data from real solar installations to study power losses caused by module-level mismatches and bypass diode activation. The analysis combines theoretical modeling with empirical data to quantify mismatch losses across different seasons, climates, and system configurations.
@@ -22,15 +95,57 @@ This is a solar photovoltaic (PV) research project analyzing mismatch losses in 
 - **`Paper/`** - Research papers and documentation
 - **`old_data/`** - Legacy data from earlier analysis phases
 
+## Code Architecture Evolution
+
+**Object-Oriented Refactoring (January 2025):**
+The project has evolved from notebook-only analysis to include modular, reusable code:
+- **`mismatch_analysis.py`**: Complete refactored `MismatchAnalysis` class encapsulating the entire workflow
+- **`25_08_04_Mismatch_results_generator_refactored.ipynb`**: Simplified notebook interface using the class
+- **`refactoring_plan.md`**: Detailed specification for the object-oriented restructure
+
+**Benefits of New Architecture:**
+- Better separation of concerns and maintainability
+- Reusable components for multiple site analyses
+- Improved error handling and logging with type hints
+- Easier unit testing and validation
+- Comprehensive documentation
+
+**Usage of Refactored Code:**
+```python
+from mismatch_analysis import MismatchAnalysis
+
+# Initialize analysis object
+analysis = MismatchAnalysis(site_id='4111846', season='spring', 
+                          data_dir=data_dir, results_dir=results_dir, summary_dir=summary_dir)
+
+# Execute complete workflow
+analysis.load_and_prepare_data()
+analysis.extract_module_parameters()
+analysis.run_analysis()
+analysis.generate_plots()
+analysis.save_results()
+mismatch_loss = analysis.calculate_mismatch_loss()
+```
+
 ## Key Analysis Workflows
 
-### 1. Mismatch Results Generation (`25_04_27_Mismatch_results_generator.ipynb`)
+### 1. Mismatch Results Generation 
+
+**Original Notebook (`25_04_27_Mismatch_results_generator.ipynb`):**
 Primary workflow for processing raw telemetry data:
 - Loads optimizer-level current/voltage data from multiple sites
 - Reconstructs I-V curves using single-diode model parameters from .PAN files
 - Calculates series-combined system I-V curves
 - Compares sum-of-MPP vs series-connection power to quantify mismatch losses
 - Generates time-series plots and exports results to Excel
+
+**Refactored Workflow (`25_08_04_Mismatch_results_generator_refactored.ipynb` + `mismatch_analysis.py`):**
+Modern object-oriented approach with the same functionality:
+- Encapsulates entire workflow in `MismatchAnalysis` class
+- Provides clean separation of data loading, analysis, and visualization
+- Includes comprehensive error handling and type hints
+- Enables easy batch processing of multiple sites
+- Maintains full compatibility with existing data formats and outputs
 
 ### 2. Mismatch Results Analysis (`25_07_22_Mismatch_results_analyser.ipynb`)
 Comprehensive analysis of generated results:
@@ -107,7 +222,7 @@ PNom=400.0                 # Nominal power (W)
 
 ## Commands and Execution
 
-**Primary Analysis Workflow:**
+**Primary Analysis Workflow (Original):**
 ```bash
 # Navigate to project root
 cd "C:\Users\z5183876\OneDrive - UNSW\Documents\GitHub\24_09_24_Solar_Edge"
@@ -120,6 +235,44 @@ jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
 
 # 3. (Optional) Validate theoretical predictions with LTSpice simulation
 jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
+```
+
+**Refactored Analysis Workflow (Recommended):**
+```bash
+# Navigate to project root
+cd "C:\Users\z5183876\OneDrive - UNSW\Documents\GitHub\24_09_24_Solar_Edge"
+
+# 1. Generate mismatch results using refactored object-oriented approach
+jupyter notebook Code/25_08_04_Mismatch_results_generator_refactored.ipynb
+
+# 2. Continue with standard analysis workflow
+jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
+
+# 3. (Optional) Validate theoretical predictions with LTSpice simulation
+jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
+```
+
+**Python Module Usage:**
+```python
+# Direct usage of the MismatchAnalysis class
+import sys
+sys.path.append('Code')
+from mismatch_analysis import MismatchAnalysis
+
+# Configure and run analysis
+analysis = MismatchAnalysis(
+    site_id='4111846', 
+    season='spring',
+    data_dir=r"C:\...\Data",
+    results_dir=r"C:\...\Results", 
+    summary_dir=r"C:\...\Data\25_05_01_Newsites_summary.xlsx"
+)
+
+analysis.load_and_prepare_data()
+analysis.extract_module_parameters() 
+analysis.run_analysis()
+analysis.generate_plots()
+analysis.save_results()
 ```
 
 **Development Environment:**
