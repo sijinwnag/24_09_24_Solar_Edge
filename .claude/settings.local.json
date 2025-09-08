@@ -25,5 +25,6 @@
       "Bash(pip install:*)"
     ],
     "deny": []
-  }
+  },
+  "outputStyle": "Explanatory"
 }

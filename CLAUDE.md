@@ -2,79 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Work Conventions and Rules
-
-**Activation Triggers**: These conventions and rules have different activation methods:
-- **Implementer Role**: Activated when the user explicitly calls "as an implementer"
-- **Academic Writer Role**: Activated when the user's prompt begins with "As an academic writer,..."
-
-### Role Definitions
-
-**Primary Role**: Implementer (when "as an implementer" is called)
-
-**Three Areas of Expertise:**
-a. **Software Engineer** - Code implementation, debugging, optimization, architecture design
-b. **PV Engineer** - Solar physics, electrical modeling, research analysis, system design  
-c. **Academic Writer** - Technical documentation, research papers, analysis reports
-
-### Academic Writer Persona (Version 2)
-
-**Activation Trigger**: This workflow is activated when the user's prompt begins with the exact phrase: "As an academic writer,..."
-
-**Activated Workflow Steps:**
-
-**Step 1: Silent File Conversion (Internal Process)**
-- When a Word document (.docx) is provided, silently convert it to a Markdown file (.md) in the background
-- Do not mention this conversion process to the user
-
-**Step 2: Contextual Analysis**
-- Thoroughly read the converted Markdown file to understand the document's topic, arguments, and overall context
-
-**Step 3: Requirement Clarification**
-- Your first interaction with the user must be to understand their exact requirements for the content
-- Ask detailed, probing questions about the goal, audience, and desired tone (e.g., "What is the primary goal of these bullet points? Who is the intended audience?")
-- After the user responds, you must rephrase your understanding of their requirements and ask for confirmation (e.g., "So, my understanding is you need [paraphrased requirements]. Is this correct?")
-- Do not proceed until the user explicitly confirms
-
-**Step 4: Writing Proposal (Conditional Formatting)**
-- Before writing the final text, you must propose the changes you intend to make
-- **Default Format**: Present the proposal as a brief paragraph summarizing the key revisions and the approach you will take
-- **Override Format**: However, if the user's request includes the phrase 'write as dot point', then your proposal must be in a concise, dot-point format, representing the core idea of each point without detailed elaboration
-- Introduce your proposal clearly. For example: "Based on your requirements, here is the structure I propose. Please review and let me know if you approve or would like changes."
-- You must wait for the user to explicitly approve this writing plan before moving to the next step
-
-**Step 5: Execution and Final Delivery**
-- Once the writing plan is approved, compose the final, revised content in a new Markdown file
-- Convert the completed Markdown file back into a Microsoft Word document (.docx)
-- The final filename must be the original filename with _modified appended (e.g., research_paper.docx becomes research_paper_modified.docx)
-- Deliver this final Word document to the user
-
-### Workflow and Behavior
-
-3. **Formal Implementation Plans**: Each time you are given an .md file, treat it as a formal implementation plan that must be followed precisely
-
-4. **Discussion Phase Requirements**: Before implementation begins, enter a discussion phase
-   a. Start by asking the user as many questions as needed for complete clarity
-   b. Clarify the expected output, all input data, and whether the user has any preferred methods or libraries
-
-5. **Research and Analysis**: During the discussion phase, think carefully, use Context7, consult online resources if needed, and apply your PV engineering expertise
-
-6. **No Premature Implementation**: Do not implement any part of the task during the discussion phase unless the user explicitly approves the plan and instructs you to implement
-
-7. **Complete Understanding**: Continue asking questions until you are fully confident in the scope and expectations of the task
-
-### Implementation Phase
-
-8. **Follow the Plan**: During implementation, follow the approved .md file closely
-   a. Use Context7 for library documentation and best practices
-   b. Think carefully about every step before executing
-
-9. **Stop for Clarification**: If at any point you require additional input or clarification, stop and ask the user before continuing
-
-10. **Clean Up**: After completing the implementation, clean up any intermediate files generated during the process
-
-11. **Backup Protocol**: During implementation, if you modify any Python script or Jupyter notebook file, always create a backup copy before making changes
-
 ## Project Overview
 
 This is a solar photovoltaic (PV) research project analyzing mismatch losses in SolarEdge systems. The project uses telemetry data from real solar installations to study power losses caused by module-level mismatches and bypass diode activation. The analysis combines theoretical modeling with empirical data to quantify mismatch losses across different seasons, climates, and system configurations.
@@ -102,6 +29,12 @@ The project has evolved from notebook-only analysis to include modular, reusable
 - **`mismatch_analysis.py`**: Complete refactored `MismatchAnalysis` class encapsulating the entire workflow
 - **`25_08_04_Mismatch_results_generator_refactored.ipynb`**: Simplified notebook interface using the class
 - **`refactoring_plan.md`**: Detailed specification for the object-oriented restructure
+
+**Latest Development (September 2025):**
+Pure Python module implementation for multi-orientation systems:
+- **`25_09_05_Mismatch_results_generator_multi.py`**: Standalone Python module for multi-orientation analysis with K-means clustering
+- **`README_Multi_Orientation.md`**: Comprehensive documentation for the multi-orientation analysis workflow
+- **Enhanced Capabilities**: Per-timestamp module grouping, current-based clustering, and improved mismatch loss estimation
 
 **Benefits of New Architecture:**
 - Better separation of concerns and maintainability
@@ -147,14 +80,39 @@ Modern object-oriented approach with the same functionality:
 - Enables easy batch processing of multiple sites
 - Maintains full compatibility with existing data formats and outputs
 
-### 2. Mismatch Results Analysis (`25_07_22_Mismatch_results_analyser.ipynb`)
+### 2. Multi-Inverter Analysis (`25_09_03_Mismatch_results_generator_multi.ipynb`)
+Enhanced workflow for complex multi-orientation systems:
+- **Automated Site Classification**: Distinguishes single vs. multi-orientation systems
+- **Orientation-Aware Processing**: Handles 3-6 orientation configurations per site
+- **Advanced Data Handling**: Processes both single CSV files with reporter_id columns and multiple CSV files
+- **Hemisphere-Aware Seasonal Mapping**: Automatic Northern/Southern hemisphere season detection
+- **Results Organization**: Date-based folder structure with timestamped outputs
+- **Performance Optimization**: Configurable day limits for large dataset processing
+
+**Key Features:**
+```python
+# Site classification
+single_orientation_site_ids = [4002138, 4034376, 4140175, ...]
+multi_orientation_site_ids = [3455043, 4111492, 4111800, ...]
+multi_orientation_systems_orientations = {
+    '3455043': 3,  # 3 orientations
+    '4111492': 4,  # 4 orientations
+    '4118327': 4   # 4 orientations
+}
+
+# Hemisphere-specific seasonal mapping
+season_months_south = {'summer': ['december', 'january', 'february'], ...}
+season_months_north = {'summer': ['june', 'july', 'august'], ...}
+```
+
+### 3. Mismatch Results Analysis (`25_07_22_Mismatch_results_analyser.ipynb`)
 Comprehensive analysis of generated results:
 - Aggregates mismatch data across sites and seasons
 - Performs outlier detection for Voc/Isc to identify bypass diode activation
 - Analyzes correlation with climate zones, latitude, system size, and shading
 - Creates comparative visualizations before/after filtering diode activation events
 
-### 3. Daily Mismatch Analysis (Section 6 of Analyzer Notebook)
+### 4. Daily Mismatch Analysis (Section 6 of Analyzer Notebook)
 Daily analysis functionality integrated within the main analyzer notebook:
 - Available as Section 6 in `25_07_22_Mismatch_results_analyser.ipynb`
 - Processes combined "no_diode" filtered data files to extract daily mismatch metrics
@@ -162,7 +120,7 @@ Daily analysis functionality integrated within the main analyzer notebook:
 - Streamlined for core Excel output without visualization or caching overhead
 - Significantly faster execution than seasonal analysis for large datasets
 
-### 4. LTSpice Bypass Diode Simulation Analysis (`25_04_03_module_diode_activation_LTSpice/`)
+### 5. LTSpice Bypass Diode Simulation Analysis (`25_04_03_module_diode_activation_LTSpice/`)
 Physics-based circuit simulation for bypass diode validation:
 - **LTSpice Circuit Files**: `.asc` files modeling 72-cell module with bypass diodes based on Bomen Solar Farm specifications
 - **Simulation Data**: `25_04_04_bypass.xlsx` containing 4,851 I-V data points for normal/1-diode/2-diode scenarios (0-48.5V range)
@@ -173,6 +131,17 @@ Physics-based circuit simulation for bypass diode validation:
   - Publication-quality plotting with consistent formatting parameters
 - **Research Integration**: Validates theoretical bypass diode effects against empirical SolarEdge data
 - **Key Findings**: Progressive power degradation, voltage shift patterns, fill factor impact
+
+### 6. Multi-Orientation Analysis (`25_09_05_Mismatch_results_generator_multi.py`)
+Latest Python module for enhanced multi-orientation solar array analysis:
+- **Current-Based Module Grouping**: Per-timestamp K-means clustering based on panel current percentiles
+- **Multi-String Power Calculation**: Calculates series power within each orientation group, then sums across groups
+- **Site Configuration**: Pre-configured for 6 multi-orientation sites with 3-6 different orientations each
+- **Enhanced Visualizations**: Color-coded I-V plots showing module grouping assignments
+- **Comparative Metrics**: Traditional vs. multi-string mismatch loss comparison
+- **Key Innovation**: Better representation of real multi-orientation systems where different module groups face different irradiance conditions
+- **Validation**: Physical constraints ensure multi-string power ≤ sum-of-MPP baseline
+- **Performance**: ~20% slower than single-orientation due to per-timestamp clustering overhead
 
 ## Data Structure
 
@@ -252,14 +221,25 @@ jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
 jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
 ```
 
+**Multi-Inverter Analysis Workflow (Latest):**
+```bash
+# Option 1: Jupyter notebook interface (traditional)
+jupyter notebook Code/25_09_03_Mismatch_results_generator_multi.ipynb
+
+# Option 2: Pure Python module (recommended for automation)
+python Code/25_09_05_Mismatch_results_generator_multi.py
+
+# Followed by standard analysis
+jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
+```
+
 **Python Module Usage:**
 ```python
-# Direct usage of the MismatchAnalysis class
+# Option 1: Single-orientation analysis using MismatchAnalysis class
 import sys
 sys.path.append('Code')
 from mismatch_analysis import MismatchAnalysis
 
-# Configure and run analysis
 analysis = MismatchAnalysis(
     site_id='4111846', 
     season='spring',
@@ -273,6 +253,22 @@ analysis.extract_module_parameters()
 analysis.run_analysis()
 analysis.generate_plots()
 analysis.save_results()
+
+# Option 2: Multi-orientation analysis using standalone Python module
+import importlib.util
+
+# Dynamic import due to numeric filename
+spec = importlib.util.spec_from_file_location('multi_analysis', 
+    'Code/25_09_05_Mismatch_results_generator_multi.py')
+multi_analysis = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(multi_analysis)
+
+# Run multi-orientation analysis for specific sites
+multi_analysis.run_multi_orientation_analysis(
+    site_ids=['3455043', '4111492'],  # Multi-orientation sites
+    seasons=['spring'], 
+    num_days_to_plot=5
+)
 ```
 
 **Development Environment:**
@@ -284,7 +280,7 @@ jupyter lab
 jupyter notebook
 
 # Install complete dependency stack
-pip install pandas numpy matplotlib scipy pvlib geopy imageio openpyxl xlrd kgcpy
+pip install pandas numpy matplotlib scipy pvlib geopy imageio openpyxl xlrd kgcpy scikit-learn
 
 # For Windows users with permission issues (OneDrive), ensure robust Excel handling
 pip install --upgrade openpyxl xlrd
@@ -302,31 +298,6 @@ python -c "import pvlib; print(pvlib.__version__)"
 ls -la Data/ Results/ Code/
 ```
 
-**Development Environment Setup:**
-```bash
-# Optional: Create virtual environment
-python -m venv solar_analysis_env
-source solar_analysis_env/bin/activate  # Linux/Mac
-# or
-solar_analysis_env\Scripts\activate     # Windows
-
-# Install requirements
-pip install jupyter pandas numpy matplotlib scipy pvlib geopy imageio kgcpy
-```
-
-**File Management Commands:**
-```bash
-# Navigate to project directory
-cd "C:\Users\z5183876\OneDrive - UNSW\Documents\GitHub\24_09_24_Solar_Edge"
-
-# Check data structure
-ls Data/           # List all site folders
-ls Results/        # List analysis results
-
-# Monitor analysis progress (for long-running scripts)
-python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
-```
-
 ## Dependencies and Environment
 
 **Required Python Libraries:**
@@ -334,6 +305,7 @@ python Code/25_01_22_Daily_mismatch_analyser.py | tee analysis.log
 - Solar modeling: `pvlib`
 - Geographic: `geopy`, `kgcpy` (Köppen-Geiger climate classification) 
 - Data processing: `imageio` (for GIF generation)
+- Machine Learning: `scikit-learn` (for K-means clustering in multi-orientation analysis)
 - Excel handling: `openpyxl`, `xlrd` (multiple engines for robust file access)
 - Standard: `os`, `sys`, `datetime`, `json`, `requests`, `pathlib`, `shutil`, `tempfile`
 
