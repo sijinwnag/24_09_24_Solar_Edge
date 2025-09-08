@@ -698,78 +698,6 @@ def create_raw_data_plots(merged_data: pd.DataFrame,
     print(f"Raw data plot saved: {plot_path}")
 
 
-# def create_power_comparison_plot(iv_sum_data: pd.DataFrame,
-#                                 pmppt_data: pd.DataFrame,
-#                                 site_id: str,
-#                                 season: str,
-#                                 output_dir: str) -> None:
-#     """
-#     Create power comparison plot showing Series connection vs Sum of maximum powers.
-    
-#     Args:
-#         iv_sum_data: DataFrame with sum of I*V power data
-#         pmppt_data: DataFrame with series connection power data  
-#         site_id: Site identifier
-#         season: Season name
-#         output_dir: Directory to save plot
-#     """
-#     # Combine the data
-#     combined_data = pd.merge(iv_sum_data, pmppt_data['Pmppt (W)'], left_index=True, right_index=True, how='outer')
-    
-#     # Ensure timestamp is in datetime format
-#     combined_data['Timestamp'] = pd.to_datetime(combined_data['Timestamp'])
-    
-#     # Calculate overall mismatch
-#     sum_iv_E = combined_data['Sum of I*V (W)'].sum()
-#     pmppt_E = combined_data['Pmppt (W)'].sum()
-#     sum_mismatch = (sum_iv_E - pmppt_E) / sum_iv_E if sum_iv_E > 0 else 0
-    
-#     # Create the plot
-#     fig, ax = plt.subplots(figsize=LONG_HOZ_FIGSIZE)
-    
-#     # Plot both power curves
-#     ax.plot(combined_data['Timestamp'],
-#             combined_data['Pmppt (W)'],
-#             label='Series connection',
-#             alpha=0.4)
-#     ax.plot(combined_data['Timestamp'],
-#             combined_data['Sum of I*V (W)'],
-#             label='Sum of maximum powers',
-#             alpha=0.4)
-    
-#     # Set labels and title
-#     ax.set_xlabel('Time', fontsize=AXIS_LABEL_SIZE)
-#     ax.set_ylabel('Power (W)', fontsize=AXIS_LABEL_SIZE)
-    
-#     first_month = pd.to_datetime(combined_data['Timestamp'].iloc[0]).strftime('%B')
-#     ax.set_title(
-#         f'Site ID: {site_id}, Month: {first_month}\nMismatch: {sum_mismatch * 100:.2f}%',
-#         fontsize=TITLE_SIZE, pad=20
-#     )
-    
-#     # Add legend
-#     ax.legend(loc='upper right', fontsize=AXIS_NUM_SIZE-5)
-    
-#     # Format x-axis ticks every 2 days
-#     ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
-#     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
-#     ax.tick_params(axis='x', labelsize=AXIS_NUM_SIZE)
-#     ax.tick_params(axis='y', labelsize=AXIS_NUM_SIZE)
-    
-#     # Adjust layout
-#     plt.tight_layout()
-#     fig.subplots_adjust(bottom=0.20)
-    
-#     # Save the plot
-#     plot_path = os.path.join(output_dir, 'pmppt_vs_sum_iv.png')
-#     fig.savefig(plot_path, dpi=300)
-#     plt.close(fig)  # Close to free memory
-    
-#     print(f"Power comparison plot saved: {plot_path}")
-    
-#     return sum_mismatch
-
-
 def create_power_comparison_plot(iv_sum_data: pd.DataFrame,
                                pmppt_data: pd.DataFrame,
                                multi_string_data: pd.DataFrame,
@@ -1239,6 +1167,9 @@ def process_site_timestamps(merged_data: pd.DataFrame,
                           output_dir: str) -> None:
     """
     Process all timestamps for a site with multi-orientation grouping.
+    Phase 1: Only perform grouping (no power calculations)
+    Phase 2: Determine consistent groups across timestamps
+    Phase 3: Calculate powers and compare methods using consistent groups
     
     Args:
         merged_data: DataFrame with all timestamp data
@@ -1249,25 +1180,15 @@ def process_site_timestamps(merged_data: pd.DataFrame,
         module_params: Module parameters from .PAN file
         output_dir: Output directory for results
     """
-    # Initialize data storage
-    image_files = []
-    max_power_df_combined = pd.DataFrame(columns=[
-        'Timestamp', 'Max Voltage (V)', 'Max Current (A)', 'Max Power (W)', 'Voc (V)', 'Isc (A)'
-    ])
-    pmppt_data = pd.DataFrame(columns=['Timestamp', 'Pmppt (W)'])
-    multi_string_data = pd.DataFrame(columns=['Timestamp', 'Multi_String_Power (W)'])
-    module_param_df = pd.DataFrame(columns=[
-        'Timestamp', 'Optimizer', 'I0', 'Isc', 'Voc', 'FF', 'Pmp', 'Imp', 'Vmp'
-    ])
-    iv_sum_data = pd.DataFrame(columns=['Timestamp', 'Sum of I*V (W)'])
+    # Initialize minimal data storage for Phase 1
     grouping_data = pd.DataFrame(columns=[
-        'Timestamp', 'N_Groups', 'Group_ID', 'Reporter_IDs', 'Current_Range_Min', 'Current_Range_Max', 'Group_Power'
+        'Timestamp', 'N_Groups', 'Group_ID', 'Reporter_IDs', 'Current_Range_Min', 'Current_Range_Max'
     ])
     
-    # Define current range for I-V calculations
+    # Define current range for I-V calculations (used in Phase 3)
     currents = np.linspace(0, Y_LIMIT_INVERTER[1], 100)
     
-    # Generate raw data plot early in the process (like reference notebook)
+    # Generate raw data plot for context
     try:
         create_raw_data_plots(merged_data, reporter_ids, site_id, season, output_dir)
     except Exception as e:
@@ -1276,100 +1197,139 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     print(f"Processing {len(merged_data)} timestamps...")
     
     # ============================================================================
-    # PHASE 1: DATA COLLECTION - Collect grouping data across all timestamps
+    # PHASE 1: DATA COLLECTION - Only perform K-means grouping
     # ============================================================================
-    print("Phase 1: Collecting grouping data across all timestamps...")
+    print("Phase 1: Performing K-means grouping across all timestamps...")
     grouping_history = []  # Store group assignments for each timestamp
-    timestamp_data = []  # Store timestamp-specific data for later visualization
+    timestamp_data = []  # Store timestamp-specific data for later processing
     
     for idx in range(len(merged_data)):
         current_timestamp = pd.to_datetime(merged_data['Timestamp'].iloc[idx])
         
-        # Calculate total system power for night-time detection
+        # Calculate total system power for night-time detection only
         total_system_power = 0
         valid_power_readings = 0
         for optimiser in reporter_ids:
-            power_val = merged_data.get(f'power_{optimiser}', pd.Series([0]*len(merged_data))).iloc[idx]
-            if not pd.isna(power_val):
-                total_system_power += max(0, power_val)
-                valid_power_readings += 1
+            power_col = f'power_{optimiser}'
+            if power_col in merged_data.columns:
+                power_val = merged_data[power_col].iloc[idx]
+                if not pd.isna(power_val):
+                    total_system_power += max(0, power_val)
+                    valid_power_readings += 1
 
         # Skip only if true night conditions (very low system power) or insufficient valid readings
         if total_system_power < 10 or valid_power_readings < len(reporter_ids) * 0.25:
             if idx % 50 == 0:  # Reduce logging frequency
                 print(f"  Timestamp {idx}: Night-time or insufficient data (total power: {total_system_power:.1f}W)")
-            
-            # Store zero values for night-time instead of complete skip
-            if total_system_power < 10:
-                timestamp_title = current_timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Store zero power data for night-time
-                iv_sum_row = pd.DataFrame({'Timestamp': [timestamp_title], 'Sum of I*V (W)': [0.0]})
-                pmppt_row = pd.DataFrame({'Timestamp': [timestamp_title], 'Pmppt (W)': [0.0]})  
-                multi_string_row = pd.DataFrame({'Timestamp': [timestamp_title], 'Multi_String_Power (W)': [0.0]})
-
-                # Append to respective DataFrames
-                if iv_sum_data.empty:
-                    iv_sum_data = iv_sum_row
-                else:
-                    iv_sum_data = pd.concat([iv_sum_data, iv_sum_row], ignore_index=True)
-                
-                if pmppt_data.empty:
-                    pmppt_data = pmppt_row
-                else:
-                    pmppt_data = pd.concat([pmppt_data, pmppt_row], ignore_index=True)
-                    
-                if multi_string_data.empty:
-                    multi_string_data = multi_string_row
-                else:
-                    multi_string_data = pd.concat([multi_string_data, multi_string_row], ignore_index=True)
-            
             continue
         
-        # Group modules by current percentiles
+        # Group modules by current values
         panel_currents = {}
         for reporter_id in reporter_ids:
             current_col = f'panel_current_{reporter_id}'
             if current_col in merged_data.columns:
                 panel_currents[reporter_id] = merged_data[current_col].iloc[idx]
         
+        # Apply K-means clustering to group modules based on current
         group_assignments, effective_groups, group_ranges = group_modules_by_kmeans(
             panel_currents, n_orientations, reporter_ids
         )
         
-        # Group modules by assignment
+        # Group modules by assignment (for storage only)
         grouped_modules = {}
         for reporter_id, group_id in group_assignments.items():
             if group_id not in grouped_modules:
                 grouped_modules[group_id] = []
             grouped_modules[group_id].append(reporter_id)
         
-        # Calculate multi-string power
-        multi_string_power, group_powers, valid_calculation = calculate_multi_string_series_power(
-            grouped_modules, merged_data, idx, currents, module_params
-        )
+        # Store grouping history for consistent group determination
+        grouping_history.append(group_assignments.copy())
         
-        # Calculate sum_iv for physical constraint validation
-        current_sum_iv = sum(merged_data[f'panel_voltage_{opt}'].iloc[idx] * merged_data[f'panel_current_{opt}'].iloc[idx] 
-                            for opt in reporter_ids 
-                            if f'panel_voltage_{opt}' in merged_data.columns and f'panel_current_{opt}' in merged_data.columns
-                            and not (np.isnan(merged_data[f'panel_voltage_{opt}'].iloc[idx]) or np.isnan(merged_data[f'panel_current_{opt}'].iloc[idx])))
+        # Calculate traditional series power for this timestamp
+        traditional_combined_voltage = np.zeros_like(currents)
+        traditional_valid_data_found = False
+        traditional_sum_iv = 0
         
-        # Validate physical constraints
-        if multi_string_power > current_sum_iv + 0.01:  # Small numerical tolerance
-            print(f"WARNING: Multi-string power ({multi_string_power:.2f}W) > Sum MPP ({current_sum_iv:.2f}W)")
-            print(f"  Timestamp: {current_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-            multi_string_power = min(multi_string_power, current_sum_iv)  # Cap at physical maximum
-
-        # Calculate realistic mismatch loss for monitoring
-        if current_sum_iv > 0:
-            mismatch_loss_check = (current_sum_iv - multi_string_power) / current_sum_iv * 100
+        for optimiser in reporter_ids:
+            voltage_col = f'panel_voltage_{optimiser}'
+            current_col = f'panel_current_{optimiser}'
+            temp_col = f'panel_temperature_{optimiser}'
             
-            # Warning for suspiciously low losses during good generation
-            if mismatch_loss_check < 0.5 and total_system_power > 500:  # Daytime with good generation
-                print(f"INFO: Low mismatch loss during good generation: {mismatch_loss_check:.2f}% at {current_timestamp.strftime('%H:%M:%S')}")
+            if not all(col in merged_data.columns for col in [voltage_col, current_col, temp_col]):
+                continue
+                
+            panel_voltage = merged_data[voltage_col].iloc[idx]
+            panel_current = merged_data[current_col].iloc[idx]
+            panel_temperature = merged_data[temp_col].iloc[idx]
+            
+            is_nan_or_zero = (
+                panel_voltage == 0 or panel_current == 0 or
+                pd.isna(panel_voltage) or pd.isna(panel_current)
+            )
+            
+            if not is_nan_or_zero:
+                traditional_valid_data_found = True
+                traditional_sum_iv += panel_voltage * panel_current
+                
+                # Calculate I-V curve for this module
+                panel_temperature_kelvin = panel_temperature + 273.15
+                vth = (BOLTZMANN_CONSTANT * panel_temperature_kelvin / ELECTRON_CHARGE 
+                       if USE_DYNAMIC_VTH else 0.0259)
+                
+                # Calculate single-diode parameters
+                I0_val = I0(panel_current, panel_voltage, 
+                          module_params['Rs'], module_params['Rsh'], 
+                          module_params['n'], module_params['N'], vth)
+                IL_val = IL(panel_current, panel_voltage,
+                          module_params['Rs'], module_params['Rsh'], 
+                          module_params['n'], module_params['N'], vth, I0_val)
+                
+                # Generate I-V curve
+                params = {
+                    'photocurrent': IL_val,
+                    'saturation_current': I0_val,
+                    'resistance_series': module_params['Rs'],
+                    'resistance_shunt': module_params['Rsh'],
+                    'nNsVth': module_params['n'] * module_params['N'] * vth
+                }
+                
+                voltage = pvlib.pvsystem.v_from_i(
+                    current=currents,
+                    photocurrent=params['photocurrent'],
+                    saturation_current=params['saturation_current'],
+                    resistance_series=params['resistance_series'],
+                    resistance_shunt=params['resistance_shunt'],
+                    nNsVth=params['nNsVth']
+                )
+                
+                # Clip voltages
+                results = pvlib.pvsystem.singlediode(**params)
+                isc = results['i_sc']
+                voltage = np.where(currents > isc, 0, voltage)
+                
+                # Add to total voltage (series connection)
+                traditional_combined_voltage += voltage
         
-        # Store grouping information for later processing
+        # Calculate traditional series max power
+        traditional_max_power = np.nan
+        if traditional_valid_data_found:
+            traditional_power = traditional_combined_voltage * currents
+            traditional_max_power = np.max(traditional_power)
+        
+        # Store timestamp data for Phase 3 processing
+        timestamp_info = {
+            'idx': idx,
+            'timestamp': current_timestamp,
+            'group_assignments': group_assignments.copy(),
+            'effective_groups': effective_groups,
+            'group_ranges': group_ranges.copy(),
+            'grouped_modules': grouped_modules.copy(),
+            'traditional_max_power': traditional_max_power,
+            'traditional_sum_iv': traditional_sum_iv
+        }
+        timestamp_data.append(timestamp_info)
+        
+        # Store basic grouping information for later analysis
         for group_id, reporter_list in grouped_modules.items():
             if group_id <= len(group_ranges):
                 min_current, max_current = group_ranges[group_id - 1]
@@ -1382,341 +1342,18 @@ def process_site_timestamps(merged_data: pd.DataFrame,
                 'Group_ID': [group_id],
                 'Reporter_IDs': [';'.join(reporter_list)],
                 'Current_Range_Min': [min_current],
-                'Current_Range_Max': [max_current],
-                'Group_Power': [group_powers.get(group_id, 0)]
+                'Current_Range_Max': [max_current]
             })
             if grouping_data.empty:
                 grouping_data = grouping_row
             else:
                 grouping_data = pd.concat([grouping_data, grouping_row], ignore_index=True)
         
-        # Store grouping history for consistent group determination
-        grouping_history.append(group_assignments.copy())
-        
-        # Calculate traditional series power for comparison (essential calculation for Phase 3)
-        traditional_combined_voltage = np.zeros_like(currents)
-        traditional_valid_data_found = False
-        traditional_sum_iv = 0
-        
-        for optimiser in reporter_ids:
-            optimiser_voltage = merged_data[f'panel_voltage_{optimiser}']
-            optimiser_current = merged_data[f'panel_current_{optimiser}']
-            panel_temperature = merged_data[f'panel_temperature_{optimiser}']
-            
-            is_nan_or_zero = (
-                optimiser_voltage.iloc[idx] == 0 or
-                optimiser_current.iloc[idx] == 0 or
-                np.isnan(optimiser_voltage.iloc[idx]) or
-                np.isnan(optimiser_current.iloc[idx])
-            )
-            
-            if not is_nan_or_zero:
-                traditional_valid_data_found = True
-                panel_temperature_kelvin = panel_temperature.iloc[idx] + 273.15
-                vth = (BOLTZMANN_CONSTANT * panel_temperature_kelvin / ELECTRON_CHARGE 
-                       if USE_DYNAMIC_VTH else 0.0259)
-                panel_voltage = optimiser_voltage.iloc[idx]
-                panel_current = optimiser_current.iloc[idx]
-                traditional_sum_iv += panel_voltage * panel_current
-                
-                # Calculate single-diode parameters for series combination
-                I0_op = I0(panel_current, panel_voltage, module_params['Rs'], module_params['Rsh'], 
-                          module_params['n'], module_params['N'], vth)
-                IL_op = IL(panel_current, panel_voltage, module_params['Rs'], module_params['Rsh'], 
-                          module_params['n'], module_params['N'], vth, I0_op)
-                
-                params = {
-                    'photocurrent': IL_op,
-                    'saturation_current': I0_op,
-                    'resistance_series': module_params['Rs'],
-                    'resistance_shunt': module_params['Rsh'],
-                    'nNsVth': module_params['n'] * module_params['N'] * vth
-                }
-                
-                voltage = pvlib.pvsystem.v_from_i(
-                    current=currents,
-                    photocurrent=params['photocurrent'],
-                    saturation_current=params['saturation_current'],
-                    resistance_series=params['resistance_series'],
-                    resistance_shunt=params['resistance_shunt'],
-                    nNsVth=params['nNsVth']
-                )
-                
-                results = pvlib.pvsystem.singlediode(**params)
-                isc = results['i_sc']
-                voltage = np.where(currents > isc, 0, voltage)
-                traditional_combined_voltage += voltage
-        
-        # Calculate traditional series max power
-        traditional_max_power = np.nan
-        if traditional_valid_data_found:
-            traditional_power = traditional_combined_voltage * currents
-            traditional_max_power = np.max(traditional_power)
-            
-            # Store traditional series results for export
-            max_power_idx = np.argmax(traditional_power)
-            max_voltage = traditional_combined_voltage[max_power_idx]
-            max_current = currents[max_power_idx]
-            isc_combined = currents[np.where(traditional_combined_voltage > 0)[0][-1]] if np.any(traditional_combined_voltage > 0) else 0
-            voc_combined = traditional_combined_voltage[np.where(currents == 0)[0][0]] if len(np.where(currents == 0)[0]) > 0 else 0
-            
-            max_power_point = pd.DataFrame({
-                'Timestamp': [current_timestamp],
-                'Max Voltage (V)': [max_voltage],
-                'Max Current (A)': [max_current], 
-                'Max Power (W)': [traditional_max_power],
-                'Voc (V)': [voc_combined],
-                'Isc (A)': [isc_combined]
-            })
-            if max_power_df_combined.empty:
-                max_power_df_combined = max_power_point
-            else:
-                max_power_df_combined = pd.concat([max_power_df_combined, max_power_point], ignore_index=True)
-            
-            pmppt_row = pd.DataFrame({
-                'Timestamp': [current_timestamp], 'Pmppt (W)': [traditional_max_power]
-            })
-            if pmppt_data.empty:
-                pmppt_data = pmppt_row
-            else:
-                pmppt_data = pd.concat([pmppt_data, pmppt_row], ignore_index=True)
-        
-        # Store sum_iv data
-        timestamp_title = current_timestamp.strftime('%Y-%m-%d %H:%M:%S')
-        iv_sum_row = pd.DataFrame({
-            'Timestamp': [timestamp_title], 'Sum of I*V (W)': [traditional_sum_iv]
-        })
-        if iv_sum_data.empty:
-            iv_sum_data = iv_sum_row
-        else:
-            iv_sum_data = pd.concat([iv_sum_data, iv_sum_row], ignore_index=True)
-        
-        multi_string_row = pd.DataFrame({
-            'Timestamp': [timestamp_title], 'Multi_String_Power (W)': [multi_string_power]
-        })
-        if multi_string_data.empty:
-            multi_string_data = multi_string_row
-        else:
-            multi_string_data = pd.concat([multi_string_data, multi_string_row], ignore_index=True)
-        
-        # Store timestamp data for later visualization and analysis
-        timestamp_info = {
-            'idx': idx,
-            'timestamp': current_timestamp,
-            'group_assignments': group_assignments.copy(),
-            'effective_groups': effective_groups,
-            'group_ranges': group_ranges.copy(),
-            'grouped_modules': grouped_modules.copy(),
-            'multi_string_power': multi_string_power,
-            'group_powers': group_powers.copy(),
-            'valid_calculation': valid_calculation,
-            'traditional_max_power': traditional_max_power,
-            'traditional_sum_iv': traditional_sum_iv
-        }
-        timestamp_data.append(timestamp_info)
-        
-        # Continue with existing analysis (single-string calculation for comparison)
-        combined_voltage = np.zeros_like(currents)
-        valid_data_found = False
-        sum_iv = 0
-        max_power = np.nan
-        
-        # Create matplotlib figure for visualization
-        fig_long, axs_long = plt.subplots(1, 3, figsize=LONG_HOZ_FIGSIZE)
-        subplot_titles = ["Recorded MPP values", "Reconstructed I-V curves", "Multi-String I-V curves"]
-        subplot_labels = ['(a)', '(b)', '(c)']
-        
-        for i, (title, label) in enumerate(zip(subplot_titles, subplot_labels)):
-            axs_long[i].set_title(title, fontsize=TITLE_SIZE, pad=20)  # Match original font size and padding
-            axs_long[i].set_xlabel('Voltage (V)', fontsize=AXIS_LABEL_SIZE)
-            axs_long[i].set_ylabel('Current (A)', fontsize=AXIS_LABEL_SIZE)
-            axs_long[i].text(0.95, 0.95, label, transform=axs_long[i].transAxes, 
-                           fontsize=TEXT_SIZE, ha='right', va='top')
-            axs_long[i].tick_params(axis='both', labelsize=AXIS_NUM_SIZE)
-        
-        axs_long[0].set_xlim(X_LIMIT_MODULE)
-        axs_long[0].set_ylim(Y_LIMIT_MODULE)
-        axs_long[1].set_xlim(X_LIMIT_MODULE)
-        axs_long[1].set_ylim(Y_LIMIT_MODULE)
-        vmax_scaled = X_LIMIT_INVERTER[1] 
-        axs_long[2].set_xlim((0, vmax_scaled))
-        axs_long[2].set_ylim(Y_LIMIT_INVERTER)
-        
-        # Create color-coded plots for first two subplots
-        group_colors, legend_handles, legend_labels = create_color_coded_plots(
-            group_assignments, effective_groups, merged_data, idx, 
-            reporter_ids, axs_long, currents, module_params, group_ranges
-        )
-        
-        # Plot multi-string I-V curves on the right subplot
-        plot_multi_string_iv_curves(
-            grouped_modules, merged_data, idx, currents, module_params, axs_long, group_colors
-        )
-        
-        # Add legend for plot (b) in the gap between subplot titles and main title
-        if legend_handles and legend_labels:
-            fig_long.legend(legend_handles, legend_labels, 
-                          bbox_to_anchor=(0.5, 0.7), loc='center', 
-                          fontsize=AXIS_NUM_SIZE-3, ncol=len(legend_labels), 
-                          framealpha=1, facecolor='white', edgecolor='black', 
-                          fancybox=True, shadow=False)
-        
-        # Calculate traditional series combination for comparison (background calculation)
-        for optimiser in reporter_ids:
-            optimiser_voltage = merged_data[f'panel_voltage_{optimiser}']
-            optimiser_current = merged_data[f'panel_current_{optimiser}']
-            panel_temperature = merged_data[f'panel_temperature_{optimiser}']
-            
-            is_nan_or_zero = (
-                optimiser_voltage.iloc[idx] == 0 or
-                optimiser_current.iloc[idx] == 0 or
-                np.isnan(optimiser_voltage.iloc[idx]) or
-                np.isnan(optimiser_current.iloc[idx])
-            )
-            
-            if is_nan_or_zero:
-                voltage = np.zeros_like(currents)
-                combined_voltage += voltage
-                
-                # Record NaN parameters
-                module_param_row = pd.DataFrame({
-                    'Timestamp': [current_timestamp],
-                    'Optimizer': [optimiser],
-                    'I0': [np.nan], 'Isc': [np.nan], 'Voc': [np.nan],
-                    'FF': [np.nan], 'Pmp': [np.nan], 'Imp': [np.nan], 'Vmp': [np.nan]
-                })
-                if module_param_df.empty:
-                    module_param_df = module_param_row
-                else:
-                    module_param_df = pd.concat([module_param_df, module_param_row], ignore_index=True)
-            else:
-                valid_data_found = True
-                panel_temperature_kelvin = panel_temperature.iloc[idx] + 273.15
-                vth = (BOLTZMANN_CONSTANT * panel_temperature_kelvin / ELECTRON_CHARGE 
-                       if USE_DYNAMIC_VTH else 0.0259)
-                panel_voltage = optimiser_voltage.iloc[idx]
-                panel_current = optimiser_current.iloc[idx]
-                sum_iv += panel_voltage * panel_current
-                
-                # Calculate single-diode parameters
-                I0_op = I0(panel_current, panel_voltage, module_params['Rs'], module_params['Rsh'], 
-                          module_params['n'], module_params['N'], vth)
-                IL_op = IL(panel_current, panel_voltage, module_params['Rs'], module_params['Rsh'], 
-                          module_params['n'], module_params['N'], vth, I0_op)
-                
-                params = {
-                    'photocurrent': IL_op,
-                    'saturation_current': I0_op,
-                    'resistance_series': module_params['Rs'],
-                    'resistance_shunt': module_params['Rsh'],
-                    'nNsVth': module_params['n'] * module_params['N'] * vth
-                }
-                
-                voltage = pvlib.pvsystem.v_from_i(
-                    current=currents,
-                    photocurrent=params['photocurrent'],
-                    saturation_current=params['saturation_current'],
-                    resistance_series=params['resistance_series'],
-                    resistance_shunt=params['resistance_shunt'],
-                    nNsVth=params['nNsVth']
-                )
-                
-                results = pvlib.pvsystem.singlediode(**params)
-                isc = results['i_sc']
-                voc = results['v_oc']
-                pmp = results['p_mp']
-                imp = results['i_mp']
-                vmp = results['v_mp']
-                ff = (pmp / (isc * voc)) if (isc > 0 and voc > 0) else np.nan
-                voltage = np.where(currents > isc, 0, voltage)
-                combined_voltage += voltage
-                
-                # Store module parameters
-                module_param_row_valid = pd.DataFrame({
-                    'Timestamp': [current_timestamp],
-                    'Optimizer': [optimiser],
-                    'I0': [I0_op], 'Isc': [isc], 'Voc': [voc],
-                    'FF': [ff], 'Pmp': [pmp], 'Imp': [imp], 'Vmp': [vmp]
-                })
-                if module_param_df.empty:
-                    module_param_df = module_param_row_valid
-                else:
-                    module_param_df = pd.concat([module_param_df, module_param_row_valid], ignore_index=True)
-        
-        # Store traditional series results (background calculation)
-        if valid_data_found:
-            power = combined_voltage * currents
-            max_power_idx = np.argmax(power)
-            max_voltage = combined_voltage[max_power_idx]
-            max_current = currents[max_power_idx]
-            max_power = power[max_power_idx]
-            isc_combined = currents[np.where(combined_voltage > 0)[0][-1]] if np.any(combined_voltage > 0) else 0
-            voc_combined = combined_voltage[np.where(currents == 0)[0][0]] if len(np.where(currents == 0)[0]) > 0 else 0
-            
-            # Store results for comparison
-            max_power_point = pd.DataFrame({
-                'Timestamp': [current_timestamp],
-                'Max Voltage (V)': [max_voltage],
-                'Max Current (A)': [max_current], 
-                'Max Power (W)': [max_power],
-                'Voc (V)': [voc_combined],
-                'Isc (A)': [isc_combined]
-            })
-            if max_power_df_combined.empty:
-                max_power_df_combined = max_power_point
-            else:
-                max_power_df_combined = pd.concat([max_power_df_combined, max_power_point], ignore_index=True)
-            
-            pmppt_row_dup = pd.DataFrame({
-                'Timestamp': [current_timestamp], 'Pmppt (W)': [max_power]
-            })
-            if pmppt_data.empty:
-                pmppt_data = pmppt_row_dup
-            else:
-                pmppt_data = pd.concat([pmppt_data, pmppt_row_dup], ignore_index=True)
-        
-        # Store sum_iv and multi-string power (note: this appears to be duplicate of earlier storage)
-        timestamp_title = current_timestamp.strftime('%Y-%m-%d %H:%M:%S')
-        iv_sum_row_dup = pd.DataFrame({
-            'Timestamp': [timestamp_title], 'Sum of I*V (W)': [sum_iv]
-        })
-        if iv_sum_data.empty:
-            iv_sum_data = iv_sum_row_dup
-        else:
-            iv_sum_data = pd.concat([iv_sum_data, iv_sum_row_dup], ignore_index=True)
-        
-        multi_string_row_dup = pd.DataFrame({
-            'Timestamp': [timestamp_title], 'Multi_String_Power (W)': [multi_string_power]
-        })
-        if multi_string_data.empty:
-            multi_string_data = multi_string_row_dup
-        else:
-            multi_string_data = pd.concat([multi_string_data, multi_string_row_dup], ignore_index=True)
-        
-        # Calculate mismatch losses
-        traditional_mismatch = ((sum_iv - max_power) / sum_iv * 100) if sum_iv > 0 else 0
-        multi_string_mismatch = ((sum_iv - multi_string_power) / sum_iv * 100) if sum_iv > 0 else 0
-        
-        # Create plot titles with multi-string information
-        title_row1 = f"Site: {site_id} | {timestamp_title} | Groups: {effective_groups}"
-        title_row2 = f"Sum MPP: {sum_iv:.1f}W | Trad. Series: {max_power:.1f}W | Multi-String: {multi_string_power:.1f}W"
-        title_row3 = f"Trad. Loss: {traditional_mismatch:.2f}% | Multi-String Loss: {multi_string_mismatch:.2f}%"
-        
-        fig_long.suptitle(f"{title_row1}\n{title_row2}\n{title_row3}", fontsize=TITLE_SIZE, y=0.95)
-        
-        # Adjust layout with better spacing to prevent overlap
-        plt.tight_layout(rect=[0, 0, 1, 0.85])
-        file_path = os.path.join(output_dir, f'long_horizontal_{timestamp_title.replace(":", "-").replace(" ", "_")}_grouped.png')
-        plt.savefig(file_path, bbox_inches='tight', dpi=150)  # Reduced DPI for faster saving
-        plt.close(fig_long)
-        image_files.append(file_path)
-        
         if idx % 20 == 0:  # Progress update every 20 timestamps
-            print(f"  Processed timestamp {idx+1}/{len(merged_data)}: {traditional_mismatch:.2f}% trad, {multi_string_mismatch:.2f}% multi")
-    
-    print(f"Phase 1 complete: Collected data from {len(timestamp_data)} timestamps")
-    
-    # ============================================================================
+            print(f"  Processed timestamp {idx+1}/{len(merged_data)}: K-means grouping with {effective_groups} groups")
+
+    print(f"Phase 1 complete: Collected grouping data from {len(timestamp_data)} timestamps")
+
     # PHASE 2: CONSISTENT GROUP DETERMINATION
     # ============================================================================
     print("Phase 2: Determining consistent groups across time series...")
@@ -1726,11 +1363,23 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     for reporter_id, group_id in consistent_groups.items():
         print(f"  Reporter {reporter_id} -> Group {group_id}")
     
+
     # ============================================================================
     # PHASE 3: CONSISTENT VISUALIZATION AND FINAL CALCULATIONS
     # ============================================================================
     print("Phase 3: Creating visualizations with consistent grouping...")
-    
+
+    # Initialize dataframes that were previously created in Phase 1
+    iv_sum_data = pd.DataFrame(columns=['Timestamp', 'Sum of I*V (W)'])
+    pmppt_data = pd.DataFrame(columns=['Timestamp', 'Pmppt (W)'])
+    multi_string_data = pd.DataFrame(columns=['Timestamp', 'Multi_String_Power (W)'])
+    max_power_df_combined = pd.DataFrame(columns=[
+        'Timestamp', 'Max Voltage (V)', 'Max Current (A)', 'Max Power (W)', 'Voc (V)', 'Isc (A)'
+    ])
+    module_param_df = pd.DataFrame(columns=[
+        'Timestamp', 'Optimizer', 'I0', 'Isc', 'Voc', 'FF', 'Pmp', 'Imp', 'Vmp'
+    ])
+
     # Create grouped modules based on consistent grouping
     consistent_grouped_modules = {}
     for reporter_id, group_id in consistent_groups.items():
@@ -1838,17 +1487,27 @@ def process_site_timestamps(merged_data: pd.DataFrame,
         plt.close(fig_long)
         image_files.append(file_path)
         
-        # Update multi_string_data with consistent power values
-        if idx < len(multi_string_data):
-            # Update existing row with proper column reference
-            multi_string_data.loc[multi_string_data.index[idx], 'Multi_String_Power (W)'] = consistent_multi_string_power
-        else:
-            # Append new row with proper structure
-            new_row = pd.DataFrame({
-                'Timestamp': [timestamp_title], 
-                'Multi_String_Power (W)': [consistent_multi_string_power]
-            })
-            multi_string_data = pd.concat([multi_string_data, new_row], ignore_index=True)
+        # Update multi_string_data with consistent power values - always append to ensure clean data
+        timestamp_title = current_timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        new_multistring_row = pd.DataFrame({
+            'Timestamp': [timestamp_title], 
+            'Multi_String_Power (W)': [consistent_multi_string_power]
+        })
+        multi_string_data = pd.concat([multi_string_data, new_multistring_row], ignore_index=True)
+        
+        # Store sum of I*V data (ideal maximum power)
+        new_iv_row = pd.DataFrame({
+            'Timestamp': [timestamp_title], 
+            'Sum of I*V (W)': [sum_iv]
+        })
+        iv_sum_data = pd.concat([iv_sum_data, new_iv_row], ignore_index=True)
+        
+        # Store traditional series power data (PMPPT)
+        new_pmppt_row = pd.DataFrame({
+            'Timestamp': [timestamp_title], 
+            'Pmppt (W)': [original_max_power if not pd.isna(original_max_power) else 0]
+        })
+        pmppt_data = pd.concat([pmppt_data, new_pmppt_row], ignore_index=True)
         
         if idx % 20 == 0:
             print(f"  Processed consistent visualization {idx+1}/{len(timestamp_data)}: {consistent_multi_string_mismatch:.2f}% consistent multi")
