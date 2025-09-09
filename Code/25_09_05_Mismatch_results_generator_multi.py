@@ -152,6 +152,59 @@ def group_modules_by_kmeans(panel_currents: Dict[str, float],
         n_clusters = len(valid_currents)
     else:
         n_clusters = n_orientations
+
+
+def create_gif_from_images(image_files: List[str], output_path: str, duration: int = 200) -> None:
+    """Create a GIF from a list of image files."""
+    if not image_files:
+        print(f"Warning: No image files provided for GIF creation at {output_path}")
+        return
+    
+    try:
+        with imageio.get_writer(output_path, mode='I', duration=duration, loop=0) as writer:
+            for filename in image_files:
+                image = imageio.imread(filename)
+                writer.append_data(image)
+        print(f"GIF saved: {output_path}")
+    except Exception as e:
+        print(f"Warning: Could not create GIF at {output_path}: {str(e)}")
+
+
+def group_modules_by_kmeans(panel_currents: Dict[str, float], 
+                           n_orientations: int,
+                           reporter_ids: List[str]) -> Tuple[Dict[str, int], int, List[Tuple[float, float]]]:
+    """
+    Group modules by K-means clustering based on panel current values for multi-orientation analysis.
+    
+    Args:
+        panel_currents: Dictionary mapping reporter_id to panel_current
+        n_orientations: Number of clusters (k) for K-means
+        reporter_ids: List of reporter IDs
+        
+    Returns:
+        Tuple of (group_assignments, effective_groups, group_ranges)
+        - group_assignments: Dict mapping reporter_id to group number (1-indexed)
+        - effective_groups: Actual number of groups created
+        - group_ranges: List of (min_current, max_current) for each group
+    """
+    # Filter out invalid current values
+    valid_currents = {}
+    for reporter_id in reporter_ids:
+        current = panel_currents.get(reporter_id, 0)
+        if not (np.isnan(current) or current <= 0):
+            valid_currents[reporter_id] = current
+    
+    if len(valid_currents) < 2:
+        # Not enough valid data for clustering
+        group_assignments = {rid: 1 for rid in reporter_ids}
+        return group_assignments, 1, [(0, max(panel_currents.values()) if panel_currents else 1)]
+    
+    # Check if we have fewer data points than desired clusters
+    if len(valid_currents) < n_orientations:
+        warnings.warn(f"Only {len(valid_currents)} valid data points, reducing clusters to {len(valid_currents)}")
+        n_clusters = len(valid_currents)
+    else:
+        n_clusters = n_orientations
     
     # Create DataFrame for easier processing
     current_df = pd.DataFrame(list(valid_currents.items()), columns=['reporter_id', 'current'])
@@ -1251,6 +1304,7 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     """
     # Initialize data storage
     image_files = []
+    dynamic_image_files = []  # Add this to track Phase 1 dynamic grouping visualizations
     max_power_df_combined = pd.DataFrame(columns=[
         'Timestamp', 'Max Voltage (V)', 'Max Current (A)', 'Max Power (W)', 'Voc (V)', 'Isc (A)'
     ])
@@ -1709,7 +1763,7 @@ def process_site_timestamps(merged_data: pd.DataFrame,
         file_path = os.path.join(output_dir, f'long_horizontal_{timestamp_title.replace(":", "-").replace(" ", "_")}_grouped.png')
         plt.savefig(file_path, bbox_inches='tight', dpi=150)  # Reduced DPI for faster saving
         plt.close(fig_long)
-        image_files.append(file_path)
+        dynamic_image_files.append(file_path)  # Track dynamic grouping visualization
         
         if idx % 20 == 0:  # Progress update every 20 timestamps
             print(f"  Processed timestamp {idx+1}/{len(merged_data)}: {traditional_mismatch:.2f}% trad, {multi_string_mismatch:.2f}% multi")
@@ -1858,7 +1912,8 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     # Export results
     export_enhanced_results(
         iv_sum_data, pmppt_data, multi_string_data, max_power_df_combined,
-        module_param_df, grouping_data, image_files, output_dir, site_id, season
+        module_param_df, grouping_data, image_files, dynamic_image_files,
+        output_dir, site_id, season
     )
 
 
@@ -1868,7 +1923,8 @@ def export_enhanced_results(iv_sum_data: pd.DataFrame,
                           max_power_df_combined: pd.DataFrame,
                           module_param_df: pd.DataFrame,
                           grouping_data: pd.DataFrame,
-                          image_files: List[str],
+                          consistent_image_files: List[str],
+                          dynamic_image_files: List[str],
                           output_dir: str,
                           site_id: str,
                           season: str) -> None:
@@ -1876,17 +1932,17 @@ def export_enhanced_results(iv_sum_data: pd.DataFrame,
     
     print(f"Exporting results to {output_dir}...")
     
-    # Create GIF from plots
-    if image_files:
-        gif_path = os.path.join(output_dir, 'combined_iv_curves_grouped.gif')
-        try:
-            with imageio.get_writer(gif_path, mode='I', duration=200, loop=0) as writer:
-                for filename in image_files:
-                    image = imageio.imread(filename)
-                    writer.append_data(image)
-            print(f"GIF saved: {gif_path}")
-        except Exception as e:
-            print(f"Warning: Could not create GIF: {str(e)}")
+    # Two GIFs are created:
+    # 1. consistent_iv_curves_grouped.gif - Shows panels grouped consistently across all timestamps
+    # 2. dynamic_iv_curves_grouped.gif - Shows panels grouped dynamically at each timestamp
+    
+    # Create GIF from consistent grouping plots
+    create_gif_from_images(consistent_image_files, 
+                         os.path.join(output_dir, 'consistent_iv_curves_grouped.gif'))
+    
+    # Create GIF from dynamic grouping plots
+    create_gif_from_images(dynamic_image_files, 
+                         os.path.join(output_dir, 'dynamic_iv_curves_grouped.gif'))
     
     # Combine all power data
     try:
