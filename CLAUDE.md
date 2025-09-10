@@ -10,6 +10,33 @@ This is a solar photovoltaic (PV) research project analyzing mismatch losses in 
 
 **Methodology**: Reconstruct I-V curves from MPP telemetry data using single-diode models, then compare sum-of-MPP vs. series-connection power to quantify mismatch losses.
 
+## Work Conventions
+
+When working on this project, follow these essential conventions:
+
+### Role Definition
+- **Primary Role**: You function as either a **Software Engineer** (code implementation, debugging, optimization) or **PV Engineer** (solar physics, electrical modeling, research analysis)
+- **Secondary Role**: You are an **implementor of given plans** - execute user-defined objectives systematically
+
+### Implementation Workflow
+1. **Plan Assessment**: Before implementing any plan, critically assess it and discuss with users whether you think it can be improved. Suggest optimizations, identify potential issues, or propose alternative approaches.
+
+2. **Interactive Implementation**: During implementation, stop and ask the user if you have any questions. Don't make assumptions about unclear requirements - seek clarification proactively.
+
+3. **Deep Analysis**: During implementation, think hard and leverage Context7 for:
+   - Library documentation and best practices
+   - Solar PV modeling standards and conventions
+   - Research methodology validation
+   - Code pattern verification
+
+4. **Post-Implementation Cleanup**: After implementation, clean up any intermediate files you created during development, testing, or analysis (temporary files, debug outputs, draft notebooks, etc.)
+
+### Quality Standards
+- Maintain research-grade code quality and documentation
+- Ensure reproducibility of all analysis workflows  
+- Follow existing project patterns and conventions
+- Validate results against theoretical expectations
+
 ## Repository Structure
 
 - **`Code/`** - Jupyter notebooks containing the main analysis workflows
@@ -26,15 +53,17 @@ This is a solar photovoltaic (PV) research project analyzing mismatch losses in 
 
 **Object-Oriented Refactoring (January 2025):**
 The project has evolved from notebook-only analysis to include modular, reusable code:
-- **`mismatch_analysis.py`**: Complete refactored `MismatchAnalysis` class encapsulating the entire workflow
+- **`mismatch_analysis.py`**: Complete refactored `MismatchAnalysis` class encapsulating the entire workflow (875 lines)
 - **`25_08_04_Mismatch_results_generator_refactored.ipynb`**: Simplified notebook interface using the class
 - **`refactoring_plan.md`**: Detailed specification for the object-oriented restructure
 
 **Latest Development (September 2025):**
-Pure Python module implementation for multi-orientation systems:
-- **`25_09_05_Mismatch_results_generator_multi.py`**: Standalone Python module for multi-orientation analysis with K-means clustering
+Advanced multi-orientation analysis with machine learning:
+- **`25_09_05_Mismatch_results_generator_multi.py`**: Primary multi-orientation module with K-means clustering (2,064 lines)
+- **`25_09_08_Mismatch_results_generator_multi_consistent.py`**: Consistent multi-string analyzer (1,654 lines)
+- **`consistent_multi_string_analyzer.py`**: Refined multi-string analysis module (1,645 lines)
 - **`README_Multi_Orientation.md`**: Comprehensive documentation for the multi-orientation analysis workflow
-- **Enhanced Capabilities**: Per-timestamp module grouping, current-based clustering, and improved mismatch loss estimation
+- **Enhanced Capabilities**: Per-timestamp K-means clustering, current-based module grouping, and sophisticated mismatch loss estimation for complex multi-orientation solar installations
 
 **Benefits of New Architecture:**
 - Better separation of concerns and maintainability
@@ -132,15 +161,27 @@ Physics-based circuit simulation for bypass diode validation:
 - **Research Integration**: Validates theoretical bypass diode effects against empirical SolarEdge data
 - **Key Findings**: Progressive power degradation, voltage shift patterns, fill factor impact
 
-### 6. Multi-Orientation Analysis (`25_09_05_Mismatch_results_generator_multi.py`)
-Latest Python module for enhanced multi-orientation solar array analysis:
-- **Current-Based Module Grouping**: Per-timestamp K-means clustering based on panel current percentiles
+### 6. Multi-Orientation Analysis Suite
+**Advanced Python modules for multi-orientation solar array analysis:**
+
+**Primary Module (`25_09_05_Mismatch_results_generator_multi.py` - 2,064 lines):**
+- **K-means Clustering**: Per-timestamp unsupervised clustering based on panel current values
 - **Multi-String Power Calculation**: Calculates series power within each orientation group, then sums across groups
 - **Site Configuration**: Pre-configured for 6 multi-orientation sites with 3-6 different orientations each
 - **Enhanced Visualizations**: Color-coded I-V plots showing module grouping assignments
 - **Comparative Metrics**: Traditional vs. multi-string mismatch loss comparison
-- **Key Innovation**: Better representation of real multi-orientation systems where different module groups face different irradiance conditions
-- **Validation**: Physical constraints ensure multi-string power ≤ sum-of-MPP baseline
+- **Key Innovation**: Uses machine learning to automatically identify orientation groups based on real-time current patterns
+
+**Consistent Multi-String Analyzer (`consistent_multi_string_analyzer.py` - 1,645 lines):**
+- **Refined Algorithm**: Improved consistency in multi-string calculations
+- **Enhanced Error Handling**: Robust handling of edge cases and data quality issues  
+- **Optimized Performance**: Streamlined processing for large datasets
+- **Validation Framework**: Comprehensive validation of physical constraints and results
+
+**Development Versions:**
+- `25_09_08_Mismatch_results_generator_multi_consistent.py`: Intermediate development version (1,654 lines)
+- **Key Benefits**: Better representation of real multi-orientation systems where different module groups face different irradiance conditions
+- **Physical Constraints**: All modules ensure multi-string power ≤ sum-of-MPP baseline
 - **Performance**: ~20% slower than single-orientation due to per-timestamp clustering overhead
 
 ## Data Structure
@@ -221,13 +262,16 @@ jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
 jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
 ```
 
-**Multi-Inverter Analysis Workflow (Latest):**
+**Multi-Orientation Analysis Workflow (Latest Development):**
 ```bash
-# Option 1: Jupyter notebook interface (traditional)
-jupyter notebook Code/25_09_03_Mismatch_results_generator_multi.ipynb
+# Recommended: Consistent multi-string analyzer (latest stable version)
+python Code/25_09_08_Mismatch_results_generator_multi_consistent.py
 
-# Option 2: Pure Python module (recommended for automation)
+# Alternative: Advanced Python module with K-means clustering  
 python Code/25_09_05_Mismatch_results_generator_multi.py
+
+# Alternative: Jupyter notebook interface (traditional)
+jupyter notebook Code/25_09_03_Mismatch_results_generator_multi.ipynb
 
 # Followed by standard analysis
 jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
@@ -254,7 +298,7 @@ analysis.run_analysis()
 analysis.generate_plots()
 analysis.save_results()
 
-# Option 2: Multi-orientation analysis using standalone Python module
+# Option 2: Multi-orientation analysis using K-means clustering module
 import importlib.util
 
 # Dynamic import due to numeric filename
@@ -263,11 +307,25 @@ spec = importlib.util.spec_from_file_location('multi_analysis',
 multi_analysis = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(multi_analysis)
 
-# Run multi-orientation analysis for specific sites
+# Run multi-orientation analysis for specific sites with K-means clustering
 multi_analysis.run_multi_orientation_analysis(
     site_ids=['3455043', '4111492'],  # Multi-orientation sites
     seasons=['spring'], 
     num_days_to_plot=5
+)
+
+# Option 3: Consistent multi-string analyzer (latest development)
+import importlib.util
+
+spec = importlib.util.spec_from_file_location('consistent_analyzer', 
+    'Code/consistent_multi_string_analyzer.py')
+consistent_analyzer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(consistent_analyzer)
+
+# Run with consistent multi-string approach
+consistent_analyzer.run_consistent_analysis(
+    site_ids=['3455043'], 
+    seasons=['spring']
 )
 ```
 
@@ -305,7 +363,7 @@ ls -la Data/ Results/ Code/
 - Solar modeling: `pvlib`
 - Geographic: `geopy`, `kgcpy` (Köppen-Geiger climate classification) 
 - Data processing: `imageio` (for GIF generation)
-- Machine Learning: `scikit-learn` (for K-means clustering in multi-orientation analysis)
+- Machine Learning: `scikit-learn` (for K-means clustering in multi-orientation analysis), `numpy` (advanced array operations)
 - Excel handling: `openpyxl`, `xlrd` (multiple engines for robust file access)
 - Standard: `os`, `sys`, `datetime`, `json`, `requests`, `pathlib`, `shutil`, `tempfile`
 
@@ -316,7 +374,22 @@ ls -la Data/ Results/ Code/
 
 ## Common Development Tasks
 
-**Running Complete Analysis:**
+**Modern Development Workflow (Recommended):**
+1. **Multi-Orientation Analysis**: Use Python modules for advanced clustering-based analysis
+   ```bash
+   python Code/25_09_05_Mismatch_results_generator_multi.py  # K-means clustering
+   python Code/consistent_multi_string_analyzer.py           # Refined approach
+   ```
+2. **Traditional Analysis**: Use object-oriented class-based approach
+   ```bash
+   jupyter notebook Code/25_08_04_Mismatch_results_generator_refactored.ipynb
+   ```
+3. **Statistical Analysis**: Execute analyzer notebook for cross-site analysis
+   ```bash
+   jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
+   ```
+
+**Legacy Workflow (Original):**
 1. Execute `25_04_27_Mismatch_results_generator.ipynb` to process raw data
 2. Execute `25_07_22_Mismatch_results_analyser.ipynb` to analyze results (includes Section 6 for daily analysis)
 3. Results automatically saved to timestamped folders in `Results/v_from_i_combined/`

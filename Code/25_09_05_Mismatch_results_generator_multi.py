@@ -671,6 +671,195 @@ def plot_multi_string_iv_curves(grouped_modules: Dict[int, List[str]],
     # Plot (c) will have no legend per user requirements
 
 
+def create_power_comparison_plot(iv_sum_data: pd.DataFrame,
+                               pmppt_data: pd.DataFrame,
+                               multi_string_data: pd.DataFrame,
+                               consistent_multi_string_data: pd.DataFrame,
+                               site_id: str,
+                               season: str,
+                               output_dir: str) -> Tuple[float, float, float]:
+    """
+    Create power comparison plot showing Series connection vs Multi-string vs Sum of maximum powers.
+    
+    Args:
+        iv_sum_data: DataFrame with sum of I*V power data
+        pmppt_data: DataFrame with series connection power data
+        multi_string_data: DataFrame with multi-string power data
+        consistent_multi_string_data: DataFrame with consistent multi-string power data
+        site_id: Site identifier
+        season: Season name
+        output_dir: Directory to save plot
+        
+    Returns:
+        Tuple of (traditional_mismatch, multi_string_mismatch, consistent_multi_string_mismatch)
+    """
+    # Combine the data using timestamp-based merging for proper alignment
+    combined_data = pd.merge(iv_sum_data, pmppt_data[['Timestamp', 'Pmppt (W)']], on='Timestamp', how='outer')
+    combined_data = pd.merge(combined_data, multi_string_data[['Timestamp', 'Multi_String_Power (W)']], 
+                            on='Timestamp', how='outer')
+    combined_data = pd.merge(combined_data, consistent_multi_string_data[['Timestamp', 'Consistent_Multi_String_Power (W)']], 
+                            on='Timestamp', how='outer')
+    
+    # Ensure timestamp is in datetime format
+    combined_data['Timestamp'] = pd.to_datetime(combined_data['Timestamp'])
+    
+    # Calculate overall mismatches
+    sum_iv_E = combined_data['Sum of I*V (W)'].sum()
+    pmppt_E = combined_data['Pmppt (W)'].sum()
+    multi_string_E = combined_data['Multi_String_Power (W)'].sum()
+    consistent_multi_string_E = combined_data['Consistent_Multi_String_Power (W)'].sum()
+    
+    trad_mismatch = (sum_iv_E - pmppt_E) / sum_iv_E if sum_iv_E > 0 else 0
+    multi_mismatch = (sum_iv_E - consistent_multi_string_E) / sum_iv_E if sum_iv_E > 0 else 0
+    consistent_multi_mismatch = (sum_iv_E - consistent_multi_string_E) / sum_iv_E if sum_iv_E > 0 else 0
+    improvement = trad_mismatch - consistent_multi_mismatch
+    
+    # Create the plot
+    fig, ax = plt.subplots(figsize=LONG_HOZ_FIGSIZE)
+    
+    # Plot all power curves
+    ax.plot(combined_data['Timestamp'],
+            combined_data['Pmppt (W)'],
+            label='Series connection',
+            alpha=0.4)
+    # ax.plot(combined_data['Timestamp'],
+    #         combined_data['Multi_String_Power (W)'],
+    #         label='Dynamic Multi-string connection',
+    #         alpha=0.4, 
+    #         linestyle=':')
+    ax.plot(combined_data['Timestamp'],
+            combined_data['Consistent_Multi_String_Power (W)'],
+            label='Consistent Multi-string connection',
+            alpha=0.4, 
+            linestyle='--')
+    ax.plot(combined_data['Timestamp'],
+            combined_data['Sum of I*V (W)'],
+            label='Sum of maximum powers',
+            alpha=0.4)
+    
+    # Set labels and title
+    ax.set_xlabel('Time', fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel('Power (W)', fontsize=AXIS_LABEL_SIZE)
+    
+    first_month = pd.to_datetime(combined_data['Timestamp'].iloc[0]).strftime('%B')
+    ax.set_title(
+        f'Site ID: {site_id}, Month: {first_month}\n'
+        f'Traditional Mismatch: {trad_mismatch * 100:.2f}%\n'
+        f'Consistent Multi-String Mismatch: {consistent_multi_mismatch * 100:.2f}%\n'
+        f'Improvement: {improvement * 100:.2f}%',
+        fontsize=TITLE_SIZE, pad=20
+    )
+    
+    # Add legend
+    ax.legend(loc='upper right', fontsize=AXIS_NUM_SIZE-5)
+    
+    # Format x-axis ticks every 2 days
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+    ax.tick_params(axis='x', labelsize=AXIS_NUM_SIZE)
+    ax.tick_params(axis='y', labelsize=AXIS_NUM_SIZE)
+    
+    # Adjust layout
+    plt.tight_layout()
+    fig.subplots_adjust(bottom=0.20)
+    
+    # Save the plot
+    plot_path = os.path.join(output_dir, 'power_comparison_all_methods.png')
+    fig.savefig(plot_path, dpi=300)
+    plt.close(fig)  # Close to free memory
+    
+    print(f"Power comparison plot saved: {plot_path}")
+    print(f"Traditional mismatch: {trad_mismatch * 100:.2f}%")
+    print(f"Dynamic multi-string mismatch: {multi_mismatch * 100:.2f}%")
+    print(f"Consistent multi-string mismatch: {consistent_multi_mismatch * 100:.2f}%")
+    print(f"Improvement: {improvement * 100:.2f}%")
+    
+    return trad_mismatch, multi_mismatch, consistent_multi_mismatch
+
+
+def create_simplified_power_comparison_plot(iv_sum_data: pd.DataFrame,
+                                           multi_string_data: pd.DataFrame,
+                                           site_id: str,
+                                           season: str,
+                                           output_dir: str) -> float:
+    """
+    Create simplified power comparison plot showing Sum of maximum powers vs Multi-string consistent grouping only.
+    
+    Args:
+        iv_sum_data: DataFrame with sum of I*V power data
+        multi_string_data: DataFrame with multi-string power data
+        site_id: Site identifier
+        season: Season name
+        output_dir: Directory to save plot
+        
+    Returns:
+        Multi-string mismatch percentage
+    """
+    # Combine the data using timestamp-based merging for proper alignment
+    combined_data = pd.merge(iv_sum_data, multi_string_data[['Timestamp', 'Multi_String_Power (W)']], 
+                            on='Timestamp', how='outer')
+    
+    # Ensure timestamp is in datetime format
+    combined_data['Timestamp'] = pd.to_datetime(combined_data['Timestamp'])
+    
+    # Calculate mismatch
+    sum_iv_E = combined_data['Sum of I*V (W)'].sum()
+    # multi_string_E = combined_data['Multi_String_Power (W)'].sum()
+    consistent_multi_string_E = combined_data['Consistent_Multi_String_Power (W)'].sum()
+    multi_mismatch = (sum_iv_E - consistent_multi_string_E) / sum_iv_E if sum_iv_E > 0 else 0
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=LONG_HOZ_FIGSIZE)
+    
+    # Plot power curves
+    ax.plot(combined_data['Timestamp'],
+            combined_data['Sum of I*V (W)'],
+            label='Sum of maximum powers (Ideal)',
+            alpha=0.7,
+            linewidth=2)
+    ax.plot(combined_data['Timestamp'],
+            combined_data['Consistent_Multi_String_Power (W)'],
+            label='Consistent Multi-string connection',
+            alpha=0.7, 
+            linewidth=2,
+            linestyle='--')
+    
+    # Set labels and title
+    ax.set_xlabel('Time', fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel('Power (W)', fontsize=AXIS_LABEL_SIZE)
+    
+    first_month = pd.to_datetime(combined_data['Timestamp'].iloc[0]).strftime('%B')
+    ax.set_title(
+        f'Site ID: {site_id}, Month: {first_month}\n'
+        f'Multi-String Mismatch Loss: {multi_mismatch * 100:.2f}%\n'
+        f'Consistent Multi-String vs Ideal Comparison',
+        fontsize=TITLE_SIZE, pad=20
+    )
+    
+    # Add legend
+    ax.legend(loc='upper right', fontsize=AXIS_NUM_SIZE-2)
+    
+    # Format x-axis ticks every 2 days
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+    ax.tick_params(axis='x', labelsize=AXIS_NUM_SIZE)
+    ax.tick_params(axis='y', labelsize=AXIS_NUM_SIZE)
+    
+    # Adjust layout
+    plt.tight_layout()
+    fig.subplots_adjust(bottom=0.20)
+    
+    # Save the plot
+    plot_path = os.path.join(output_dir, 'simplified_power_comparison.png')
+    fig.savefig(plot_path, dpi=300)
+    plt.close(fig)  # Close to free memory
+    
+    print(f"Simplified power comparison plot saved: {plot_path}")
+    print(f"Multi-string mismatch loss: {multi_mismatch * 100:.2f}%")
+    
+    return multi_mismatch
+
+
 def create_raw_data_plots(merged_data: pd.DataFrame, 
                          reporter_ids: List[str],
                          site_id: str,
@@ -751,252 +940,10 @@ def create_raw_data_plots(merged_data: pd.DataFrame,
     print(f"Raw data plot saved: {plot_path}")
 
 
-# def create_power_comparison_plot(iv_sum_data: pd.DataFrame,
-#                                 pmppt_data: pd.DataFrame,
-#                                 site_id: str,
-#                                 season: str,
-#                                 output_dir: str) -> None:
-#     """
-#     Create power comparison plot showing Series connection vs Sum of maximum powers.
-    
-#     Args:
-#         iv_sum_data: DataFrame with sum of I*V power data
-#         pmppt_data: DataFrame with series connection power data  
-#         site_id: Site identifier
-#         season: Season name
-#         output_dir: Directory to save plot
-#     """
-#     # Combine the data
-#     combined_data = pd.merge(iv_sum_data, pmppt_data['Pmppt (W)'], left_index=True, right_index=True, how='outer')
-    
-#     # Ensure timestamp is in datetime format
-#     combined_data['Timestamp'] = pd.to_datetime(combined_data['Timestamp'])
-    
-#     # Calculate overall mismatch
-#     sum_iv_E = combined_data['Sum of I*V (W)'].sum()
-#     pmppt_E = combined_data['Pmppt (W)'].sum()
-#     sum_mismatch = (sum_iv_E - pmppt_E) / sum_iv_E if sum_iv_E > 0 else 0
-    
-#     # Create the plot
-#     fig, ax = plt.subplots(figsize=LONG_HOZ_FIGSIZE)
-    
-#     # Plot both power curves
-#     ax.plot(combined_data['Timestamp'],
-#             combined_data['Pmppt (W)'],
-#             label='Series connection',
-#             alpha=0.4)
-#     ax.plot(combined_data['Timestamp'],
-#             combined_data['Sum of I*V (W)'],
-#             label='Sum of maximum powers',
-#             alpha=0.4)
-    
-#     # Set labels and title
-#     ax.set_xlabel('Time', fontsize=AXIS_LABEL_SIZE)
-#     ax.set_ylabel('Power (W)', fontsize=AXIS_LABEL_SIZE)
-    
-#     first_month = pd.to_datetime(combined_data['Timestamp'].iloc[0]).strftime('%B')
-#     ax.set_title(
-#         f'Site ID: {site_id}, Month: {first_month}\nMismatch: {sum_mismatch * 100:.2f}%',
-#         fontsize=TITLE_SIZE, pad=20
-#     )
-    
-#     # Add legend
-#     ax.legend(loc='upper right', fontsize=AXIS_NUM_SIZE-5)
-    
-#     # Format x-axis ticks every 2 days
-#     ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
-#     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
-#     ax.tick_params(axis='x', labelsize=AXIS_NUM_SIZE)
-#     ax.tick_params(axis='y', labelsize=AXIS_NUM_SIZE)
-    
-#     # Adjust layout
-#     plt.tight_layout()
-#     fig.subplots_adjust(bottom=0.20)
-    
-#     # Save the plot
-#     plot_path = os.path.join(output_dir, 'pmppt_vs_sum_iv.png')
-#     fig.savefig(plot_path, dpi=300)
-#     plt.close(fig)  # Close to free memory
-    
-#     print(f"Power comparison plot saved: {plot_path}")
-    
-#     return sum_mismatch
 
 
-def create_power_comparison_plot(iv_sum_data: pd.DataFrame,
-                               pmppt_data: pd.DataFrame,
-                               multi_string_data: pd.DataFrame,
-                               site_id: str,
-                               season: str,
-                               output_dir: str) -> Tuple[float, float]:
-    """
-    Create power comparison plot showing Series connection vs Multi-string vs Sum of maximum powers.
-    
-    Args:
-        iv_sum_data: DataFrame with sum of I*V power data
-        pmppt_data: DataFrame with series connection power data
-        multi_string_data: DataFrame with multi-string power data
-        site_id: Site identifier
-        season: Season name
-        output_dir: Directory to save plot
-        
-    Returns:
-        Tuple of (traditional_mismatch, multi_string_mismatch)
-    """
-    # Combine the data using timestamp-based merging for proper alignment
-    combined_data = pd.merge(iv_sum_data, pmppt_data[['Timestamp', 'Pmppt (W)']], on='Timestamp', how='outer')
-    combined_data = pd.merge(combined_data, multi_string_data[['Timestamp', 'Multi_String_Power (W)']], 
-                            on='Timestamp', how='outer')
-    
-    # Ensure timestamp is in datetime format
-    combined_data['Timestamp'] = pd.to_datetime(combined_data['Timestamp'])
-    
-    # Calculate overall mismatches
-    sum_iv_E = combined_data['Sum of I*V (W)'].sum()
-    pmppt_E = combined_data['Pmppt (W)'].sum()
-    multi_string_E = combined_data['Multi_String_Power (W)'].sum()
-    
-    trad_mismatch = (sum_iv_E - pmppt_E) / sum_iv_E if sum_iv_E > 0 else 0
-    multi_mismatch = (sum_iv_E - multi_string_E) / sum_iv_E if sum_iv_E > 0 else 0
-    improvement = trad_mismatch - multi_mismatch
-    
-    # Create the plot
-    fig, ax = plt.subplots(figsize=LONG_HOZ_FIGSIZE)
-    
-    # Plot all power curves
-    ax.plot(combined_data['Timestamp'],
-            combined_data['Pmppt (W)'],
-            label='Series connection',
-            alpha=0.4)
-    ax.plot(combined_data['Timestamp'],
-            combined_data['Multi_String_Power (W)'],
-            label='Consistent Multi-string connection',
-            alpha=0.4, 
-            linestyle='--')
-    ax.plot(combined_data['Timestamp'],
-            combined_data['Sum of I*V (W)'],
-            label='Sum of maximum powers',
-            alpha=0.4)
-    
-    # Set labels and title
-    ax.set_xlabel('Time', fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel('Power (W)', fontsize=AXIS_LABEL_SIZE)
-    
-    first_month = pd.to_datetime(combined_data['Timestamp'].iloc[0]).strftime('%B')
-    ax.set_title(
-        f'Site ID: {site_id}, Month: {first_month}\n'
-        f'Traditional Mismatch: {trad_mismatch * 100:.2f}% | '
-        f'Consistent Multi-String Mismatch: {multi_mismatch * 100:.2f}% | '
-        f'Improvement: {improvement * 100:.2f}%',
-        fontsize=TITLE_SIZE, pad=20
-    )
-    
-    # Add legend
-    ax.legend(loc='upper right', fontsize=AXIS_NUM_SIZE-5)
-    
-    # Format x-axis ticks every 2 days
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
-    ax.tick_params(axis='x', labelsize=AXIS_NUM_SIZE)
-    ax.tick_params(axis='y', labelsize=AXIS_NUM_SIZE)
-    
-    # Adjust layout
-    plt.tight_layout()
-    fig.subplots_adjust(bottom=0.20)
-    
-    # Save the plot
-    plot_path = os.path.join(output_dir, 'power_comparison_all_methods.png')
-    fig.savefig(plot_path, dpi=300)
-    plt.close(fig)  # Close to free memory
-    
-    print(f"Power comparison plot saved: {plot_path}")
-    print(f"Traditional mismatch: {trad_mismatch * 100:.2f}%")
-    print(f"Consistent multi-string mismatch: {multi_mismatch * 100:.2f}%")
-    print(f"Improvement: {improvement * 100:.2f}%")
-    
-    return trad_mismatch, multi_mismatch
 
 
-def create_simplified_power_comparison_plot(iv_sum_data: pd.DataFrame,
-                                           multi_string_data: pd.DataFrame,
-                                           site_id: str,
-                                           season: str,
-                                           output_dir: str) -> float:
-    """
-    Create simplified power comparison plot showing Sum of maximum powers vs Multi-string consistent grouping only.
-    
-    Args:
-        iv_sum_data: DataFrame with sum of I*V power data
-        multi_string_data: DataFrame with multi-string power data
-        site_id: Site identifier
-        season: Season name
-        output_dir: Directory to save plot
-        
-    Returns:
-        Multi-string mismatch percentage
-    """
-    # Combine the data using timestamp-based merging for proper alignment
-    combined_data = pd.merge(iv_sum_data, multi_string_data[['Timestamp', 'Multi_String_Power (W)']], 
-                            on='Timestamp', how='outer')
-    
-    # Ensure timestamp is in datetime format
-    combined_data['Timestamp'] = pd.to_datetime(combined_data['Timestamp'])
-    
-    # Calculate mismatch
-    sum_iv_E = combined_data['Sum of I*V (W)'].sum()
-    multi_string_E = combined_data['Multi_String_Power (W)'].sum()
-    multi_mismatch = (sum_iv_E - multi_string_E) / sum_iv_E if sum_iv_E > 0 else 0
-    
-    # Create the plot
-    fig, ax = plt.subplots(figsize=LONG_HOZ_FIGSIZE)
-    
-    # Plot power curves
-    ax.plot(combined_data['Timestamp'],
-            combined_data['Sum of I*V (W)'],
-            label='Sum of maximum powers (Ideal)',
-            alpha=0.7,
-            linewidth=2)
-    ax.plot(combined_data['Timestamp'],
-            combined_data['Multi_String_Power (W)'],
-            label='Consistent Multi-string connection',
-            alpha=0.7, 
-            linewidth=2,
-            linestyle='--')
-    
-    # Set labels and title
-    ax.set_xlabel('Time', fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel('Power (W)', fontsize=AXIS_LABEL_SIZE)
-    
-    first_month = pd.to_datetime(combined_data['Timestamp'].iloc[0]).strftime('%B')
-    ax.set_title(
-        f'Site ID: {site_id}, Month: {first_month}\n'
-        f'Multi-String Mismatch Loss: {multi_mismatch * 100:.2f}%\n'
-        f'Consistent Multi-String vs Ideal Comparison',
-        fontsize=TITLE_SIZE, pad=20
-    )
-    
-    # Add legend
-    ax.legend(loc='upper right', fontsize=AXIS_NUM_SIZE-2)
-    
-    # Format x-axis ticks every 2 days
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
-    ax.tick_params(axis='x', labelsize=AXIS_NUM_SIZE)
-    ax.tick_params(axis='y', labelsize=AXIS_NUM_SIZE)
-    
-    # Adjust layout
-    plt.tight_layout()
-    fig.subplots_adjust(bottom=0.20)
-    
-    # Save the plot
-    plot_path = os.path.join(output_dir, 'simplified_power_comparison.png')
-    fig.savefig(plot_path, dpi=300)
-    plt.close(fig)  # Close to free memory
-    
-    print(f"Simplified power comparison plot saved: {plot_path}")
-    print(f"Multi-string mismatch loss: {multi_mismatch * 100:.2f}%")
-    
-    return multi_mismatch
 
 
 # ============================================================================
@@ -1310,6 +1257,8 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     ])
     pmppt_data = pd.DataFrame(columns=['Timestamp', 'Pmppt (W)'])
     multi_string_data = pd.DataFrame(columns=['Timestamp', 'Multi_String_Power (W)'])
+    # Create a new DataFrame specifically for consistent multi-string data
+    consistent_multi_string_data = pd.DataFrame(columns=['Timestamp', 'Consistent_Multi_String_Power (W)'])
     module_param_df = pd.DataFrame(columns=[
         'Timestamp', 'Optimizer', 'I0', 'Isc', 'Voc', 'FF', 'Pmp', 'Imp', 'Vmp'
     ])
@@ -1361,6 +1310,7 @@ def process_site_timestamps(merged_data: pd.DataFrame,
                 iv_sum_row = pd.DataFrame({'Timestamp': [timestamp_title], 'Sum of I*V (W)': [0.0]})
                 pmppt_row = pd.DataFrame({'Timestamp': [timestamp_title], 'Pmppt (W)': [0.0]})  
                 multi_string_row = pd.DataFrame({'Timestamp': [timestamp_title], 'Multi_String_Power (W)': [0.0]})
+                consistent_multi_string_row = pd.DataFrame({'Timestamp': [timestamp_title], 'Consistent_Multi_String_Power (W)': [0.0]})
 
                 # Append to respective DataFrames
                 if iv_sum_data.empty:
@@ -1377,6 +1327,11 @@ def process_site_timestamps(merged_data: pd.DataFrame,
                     multi_string_data = multi_string_row
                 else:
                     multi_string_data = pd.concat([multi_string_data, multi_string_row], ignore_index=True)
+                
+                if consistent_multi_string_data.empty:
+                    consistent_multi_string_data = consistent_multi_string_row
+                else:
+                    consistent_multi_string_data = pd.concat([consistent_multi_string_data, consistent_multi_string_row], ignore_index=True)
             
             continue
         
@@ -1528,7 +1483,7 @@ def process_site_timestamps(merged_data: pd.DataFrame,
                 max_power_df_combined = pd.concat([max_power_df_combined, max_power_point], ignore_index=True)
             
             pmppt_row = pd.DataFrame({
-                'Timestamp': [current_timestamp], 'Pmppt (W)': [traditional_max_power]
+                'Timestamp': [current_timestamp.strftime('%Y-%m-%d %H:%M:%S')], 'Pmppt (W)': [traditional_max_power]
             })
             if pmppt_data.empty:
                 pmppt_data = pmppt_row
@@ -1552,6 +1507,15 @@ def process_site_timestamps(merged_data: pd.DataFrame,
             multi_string_data = multi_string_row
         else:
             multi_string_data = pd.concat([multi_string_data, multi_string_row], ignore_index=True)
+        
+        # Initialize consistent multi-string data with same value as multi-string (will be updated in Phase 2)
+        consistent_multi_string_row = pd.DataFrame({
+            'Timestamp': [timestamp_title], 'Consistent_Multi_String_Power (W)': [multi_string_power]
+        })
+        if consistent_multi_string_data.empty:
+            consistent_multi_string_data = consistent_multi_string_row
+        else:
+            consistent_multi_string_data = pd.concat([consistent_multi_string_data, consistent_multi_string_row], ignore_index=True)
         
         # Store timestamp data for later visualization and analysis
         timestamp_info = {
@@ -1721,31 +1685,11 @@ def process_site_timestamps(merged_data: pd.DataFrame,
             else:
                 max_power_df_combined = pd.concat([max_power_df_combined, max_power_point], ignore_index=True)
             
-            pmppt_row_dup = pd.DataFrame({
-                'Timestamp': [current_timestamp], 'Pmppt (W)': [max_power]
-            })
-            if pmppt_data.empty:
-                pmppt_data = pmppt_row_dup
-            else:
-                pmppt_data = pd.concat([pmppt_data, pmppt_row_dup], ignore_index=True)
+            # Note: pmppt_data already stored earlier in Phase 1 processing
+            # No need to duplicate storage here
         
-        # Store sum_iv and multi-string power (note: this appears to be duplicate of earlier storage)
-        timestamp_title = current_timestamp.strftime('%Y-%m-%d %H:%M:%S')
-        iv_sum_row_dup = pd.DataFrame({
-            'Timestamp': [timestamp_title], 'Sum of I*V (W)': [sum_iv]
-        })
-        if iv_sum_data.empty:
-            iv_sum_data = iv_sum_row_dup
-        else:
-            iv_sum_data = pd.concat([iv_sum_data, iv_sum_row_dup], ignore_index=True)
-        
-        multi_string_row_dup = pd.DataFrame({
-            'Timestamp': [timestamp_title], 'Multi_String_Power (W)': [multi_string_power]
-        })
-        if multi_string_data.empty:
-            multi_string_data = multi_string_row_dup
-        else:
-            multi_string_data = pd.concat([multi_string_data, multi_string_row_dup], ignore_index=True)
+        # Note: sum_iv and multi-string power data already stored earlier in Phase 1 processing
+        # No need to duplicate storage here
         
         # Calculate mismatch losses
         traditional_mismatch = ((sum_iv - max_power) / sum_iv * 100) if sum_iv > 0 else 0
@@ -1892,17 +1836,17 @@ def process_site_timestamps(merged_data: pd.DataFrame,
         plt.close(fig_long)
         image_files.append(file_path)
         
-        # Update multi_string_data with consistent power values
-        if idx < len(multi_string_data):
-            # Update existing row with proper column reference
-            multi_string_data.loc[multi_string_data.index[idx], 'Multi_String_Power (W)'] = consistent_multi_string_power
+        # Update consistent_multi_string_data with calculated consistent power values
+        if idx < len(consistent_multi_string_data):
+            # Update existing row with consistent power values
+            consistent_multi_string_data.loc[consistent_multi_string_data.index[idx], 'Consistent_Multi_String_Power (W)'] = consistent_multi_string_power
         else:
-            # Append new row with proper structure
-            new_row = pd.DataFrame({
+            # This should rarely happen since we initialize in Phase 1, but handle it just in case
+            consistent_row = pd.DataFrame({
                 'Timestamp': [timestamp_title], 
-                'Multi_String_Power (W)': [consistent_multi_string_power]
+                'Consistent_Multi_String_Power (W)': [consistent_multi_string_power]
             })
-            multi_string_data = pd.concat([multi_string_data, new_row], ignore_index=True)
+            consistent_multi_string_data = pd.concat([consistent_multi_string_data, consistent_row], ignore_index=True)
         
         if idx % 20 == 0:
             print(f"  Processed consistent visualization {idx+1}/{len(timestamp_data)}: {consistent_multi_string_mismatch:.2f}% consistent multi")
@@ -1911,7 +1855,7 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     
     # Export results
     export_enhanced_results(
-        iv_sum_data, pmppt_data, multi_string_data, max_power_df_combined,
+        iv_sum_data, pmppt_data, multi_string_data, consistent_multi_string_data, max_power_df_combined,
         module_param_df, grouping_data, image_files, dynamic_image_files,
         output_dir, site_id, season
     )
@@ -1920,6 +1864,7 @@ def process_site_timestamps(merged_data: pd.DataFrame,
 def export_enhanced_results(iv_sum_data: pd.DataFrame,
                           pmppt_data: pd.DataFrame, 
                           multi_string_data: pd.DataFrame,
+                          consistent_multi_string_data: pd.DataFrame,
                           max_power_df_combined: pd.DataFrame,
                           module_param_df: pd.DataFrame,
                           grouping_data: pd.DataFrame,
@@ -1944,10 +1889,45 @@ def export_enhanced_results(iv_sum_data: pd.DataFrame,
     create_gif_from_images(dynamic_image_files, 
                          os.path.join(output_dir, 'dynamic_iv_curves_grouped.gif'))
     
-    # Combine all power data
+    # Combine all power data with validation
     try:
-        combined_data = pd.merge(iv_sum_data, pmppt_data[['Timestamp', 'Pmppt (W)']], on='Timestamp', how='outer')
-        combined_data = pd.merge(combined_data, multi_string_data[['Timestamp', 'Multi_String_Power (W)']], on='Timestamp', how='outer')
+        # Validate DataFrames before merging
+        print(f"  Validating DataFrames before merge:")
+        print(f"    iv_sum_data: {len(iv_sum_data)} rows, columns: {list(iv_sum_data.columns)}")
+        print(f"    pmppt_data: {len(pmppt_data)} rows, columns: {list(pmppt_data.columns)}")
+        print(f"    multi_string_data: {len(multi_string_data)} rows, columns: {list(multi_string_data.columns)}")
+        print(f"    consistent_multi_string_data: {len(consistent_multi_string_data)} rows, columns: {list(consistent_multi_string_data.columns)}")
+        
+        # Check for empty DataFrames
+        if iv_sum_data.empty:
+            print("  Warning: iv_sum_data is empty!")
+        if pmppt_data.empty:
+            print("  Warning: pmppt_data is empty!")
+        if multi_string_data.empty:
+            print("  Warning: multi_string_data is empty!")
+        if consistent_multi_string_data.empty:
+            print("  Warning: consistent_multi_string_data is empty!")
+        
+        # Start merge with main iv_sum_data
+        combined_data = iv_sum_data.copy()
+        
+        # Merge pmppt_data
+        if not pmppt_data.empty:
+            combined_data = pd.merge(combined_data, pmppt_data[['Timestamp', 'Pmppt (W)']], on='Timestamp', how='outer')
+            print(f"  After pmppt merge: {len(combined_data)} rows")
+        
+        # Merge multi_string_data
+        if not multi_string_data.empty:
+            combined_data = pd.merge(combined_data, multi_string_data[['Timestamp', 'Multi_String_Power (W)']], on='Timestamp', how='outer')
+            print(f"  After multi_string merge: {len(combined_data)} rows")
+        
+        # Merge consistent_multi_string_data
+        if not consistent_multi_string_data.empty:
+            combined_data = pd.merge(combined_data, consistent_multi_string_data[['Timestamp', 'Consistent_Multi_String_Power (W)']], on='Timestamp', how='outer')
+            print(f"  After consistent_multi_string merge: {len(combined_data)} rows")
+        
+        print(f"  Final combined_data shape: {combined_data.shape}")
+        print(f"  Final combined_data columns: {list(combined_data.columns)}")
         
         # Add metadata
         combined_data['Season'] = season
@@ -1973,29 +1953,40 @@ def export_enhanced_results(iv_sum_data: pd.DataFrame,
         combined_data.to_excel(excel_file, index=False)
         print(f"Enhanced combined data: {excel_file}")
         
-        # Generate power comparison plot
-        try:
-            create_power_comparison_plot(iv_sum_data, pmppt_data, multi_string_data, site_id, season, output_dir)
-        except Exception as e:
-            print(f"Warning: Could not create power comparison plot: {str(e)}")
-        
-        # Generate simplified power comparison plot (Sum of MPP vs Multi-string only)
-        try:
-            create_simplified_power_comparison_plot(iv_sum_data, multi_string_data, site_id, season, output_dir)
-        except Exception as e:
-            print(f"Warning: Could not create simplified power comparison plot: {str(e)}")
         
         # Print summary statistics
+        # Validate required columns exist before summary
+        required_columns = ['Sum of I*V (W)', 'Pmppt (W)', 'Multi_String_Power (W)', 'Consistent_Multi_String_Power (W)']
+        missing_columns = [col for col in required_columns if col not in combined_data.columns]
+        if missing_columns:
+            print(f"  Warning: Missing columns in combined data: {missing_columns}")
+            # Fill missing columns with NaN or appropriate default
+            for col in missing_columns:
+                combined_data[col] = 0.0
+                print(f"  Added missing column '{col}' with default value 0.0")
+        
+        # Check for empty columns
+        empty_columns = []
+        for col in required_columns:
+            if col in combined_data.columns:
+                non_zero_count = (combined_data[col] != 0).sum()
+                if non_zero_count == 0:
+                    empty_columns.append(col)
+        if empty_columns:
+            print(f"  Warning: Columns contain only zeros: {empty_columns}")
+        
         print("\n" + "="*60)
         print("ANALYSIS SUMMARY")
         print("="*60)
         total_sum_iv = combined_data['Sum of I*V (W)'].sum()
         total_pmppt = combined_data['Pmppt (W)'].sum()
         total_multi = combined_data['Multi_String_Power (W)'].sum()
+        total_consistent_multi = combined_data['Consistent_Multi_String_Power (W)'].sum()
         
         traditional_loss = (total_sum_iv - total_pmppt) / total_sum_iv * 100 if total_sum_iv > 0 else 0
         multi_string_loss = (total_sum_iv - total_multi) / total_sum_iv * 100 if total_sum_iv > 0 else 0
-        improvement = traditional_loss - multi_string_loss
+        consistent_multi_loss = (total_sum_iv - total_consistent_multi) / total_sum_iv * 100 if total_sum_iv > 0 else 0
+        improvement = traditional_loss - consistent_multi_loss
         
         print(f"Site ID: {site_id}")
         print(f"Season: {season}")
@@ -2006,6 +1997,17 @@ def export_enhanced_results(iv_sum_data: pd.DataFrame,
         print(f"Consistent Multi-String Mismatch Loss: {multi_string_loss:.2f}%")
         print(f"Improvement: {improvement:.2f} percentage points")
         print("="*60)
+        
+        # Generate power comparison plots
+        try:
+            create_power_comparison_plot(iv_sum_data, pmppt_data, multi_string_data, consistent_multi_string_data, site_id, season, output_dir)
+        except Exception as e:
+            print(f"Warning: Could not create power comparison plot: {str(e)}")
+        
+        try:
+            create_simplified_power_comparison_plot(iv_sum_data, multi_string_data, site_id, season, output_dir)
+        except Exception as e:
+            print(f"Warning: Could not create simplified power comparison plot: {str(e)}")
         
     except Exception as e:
         print(f"Warning: Could not create enhanced combined data: {str(e)}")
