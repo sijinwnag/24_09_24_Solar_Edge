@@ -18,16 +18,30 @@ import json
 import requests
 import numpy as np
 import pandas as pd
+
+# CRITICAL: Configure matplotlib backend before importing pyplot to prevent SystemExit errors
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for headless operation
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
 import pvlib
 import imageio
 import datetime
 from datetime import timedelta
 import scipy.constants as const
-import matplotlib.dates as mdates
 from typing import Dict, List, Tuple, Optional, Union
 import warnings
 from sklearn.cluster import KMeans
+import gc  # For garbage collection and memory management
+
+# Optional system resource monitoring (graceful fallback if not available)
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    print("Warning: psutil not available - system monitoring limited")
 
 # ============================================================================
 # CONFIGURATION AND CONSTANTS
@@ -39,8 +53,9 @@ MULTI_ORIENTATION_SITES = {
     '4111492': 4,
     '4111800': 4,
     '4118327': 4,
-    '3794347': 6,
-    '4173851': 4
+    '3794347': 5,
+    # '4173851': 2 # Cannot determine the number of orientations from the satelite image
+    # 4129142, cannot determine the number of orientations from the satelite image
 }
 
 # Directory configuration
@@ -68,6 +83,15 @@ USE_A_T = True  # Use ambient temperature instead of panel temperature
 BOLTZMANN_CONSTANT = const.Boltzmann
 ELECTRON_CHARGE = const.e
 
+# Batch processing parameters for memory management
+VISUALIZATION_BATCH_SIZE = 100  # Process visualizations in batches to prevent memory exhaustion
+MAX_MEMORY_PRESSURE_BATCH_SIZE = 25  # Smaller batch size when system under memory pressure
+
+# Matplotlib memory management
+import matplotlib.pyplot as plt
+plt.rcParams['figure.max_open_warning'] = 50  # Increase warning threshold
+plt.rcParams['agg.path.chunksize'] = 10000  # Reduce memory usage for complex plots
+
 # Timestamp formats for parsing
 TIMESTAMP_FORMATS = [
     "%Y-%m-%d %H:%M:%S",
@@ -91,6 +115,81 @@ SEASON_MONTHS_NORTH = {
     'winter': ['december', 'january', 'february'],
     'spring': ['march', 'april', 'may']
 }
+
+# ============================================================================
+# MEMORY MANAGEMENT AND SYSTEM UTILITIES
+# ============================================================================
+
+def get_memory_usage_mb():
+    """Get current memory usage in MB with graceful fallback."""
+    if PSUTIL_AVAILABLE:
+        try:
+            process = psutil.Process()
+            return process.memory_info().rss / 1024 / 1024
+        except Exception:
+            pass
+    return 0  # Fallback if psutil unavailable or fails
+
+def cleanup_matplotlib_memory():
+    """Comprehensive matplotlib memory cleanup."""
+    try:
+        # Get figure count before cleanup
+        fig_count_before = len(plt.get_fignums())
+        
+        # Close all figures
+        plt.close('all')
+        
+        # Clear matplotlib caches
+        if hasattr(plt, '_original_backend_map'):
+            plt._original_backend_map.clear()
+        
+        # Clear figure manager if available
+        if hasattr(plt, '_pylab_helpers'):
+            plt._pylab_helpers.Gcf.figs.clear()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Check if cleanup was successful
+        fig_count_after = len(plt.get_fignums())
+        if fig_count_before > 0:
+            print(f"Matplotlib cleanup: closed {fig_count_before} figures, {fig_count_after} remaining")
+            
+    except Exception as e:
+        print(f"Warning: matplotlib cleanup had issues: {e}")
+
+def monitor_figure_count():
+    """Monitor and warn about excessive figure count."""
+    fig_count = len(plt.get_fignums())
+    if fig_count > 15:
+        print(f"WARNING: {fig_count} matplotlib figures open - potential memory issue")
+        return True
+    return False
+
+def check_memory_pressure(threshold_mb=4096):
+    """Check if system is under memory pressure."""
+    if not PSUTIL_AVAILABLE:
+        return False
+    try:
+        memory_percent = psutil.virtual_memory().percent
+        available_gb = psutil.virtual_memory().available / (1024**3)
+        return memory_percent > 85 or available_gb < (threshold_mb/1024)
+    except Exception:
+        return False
+
+def print_memory_status(context=""):
+    """Print current memory status with context."""
+    memory_mb = get_memory_usage_mb()
+    context_str = f" [{context}]" if context else ""
+    
+    if PSUTIL_AVAILABLE:
+        try:
+            system_memory = psutil.virtual_memory()
+            print(f"Memory{context_str}: Process={memory_mb:.1f}MB, System={system_memory.percent:.1f}% used, Available={system_memory.available/(1024**3):.1f}GB")
+        except Exception:
+            print(f"Memory{context_str}: Process={memory_mb:.1f}MB (system info unavailable)")
+    else:
+        print(f"Memory{context_str}: Monitoring limited (psutil unavailable)")
 
 # ============================================================================
 # UTILITY FUNCTIONS (FROM ORIGINAL WORKFLOW)
@@ -1226,7 +1325,15 @@ def run_multi_orientation_analysis(site_ids: Optional[List[str]] = None,
                 print(f"Results saved to: {results_folder}")
                 
             except Exception as e:
-                print(f"Error processing site {site_id}, season {season}: {str(e)}")
+                import traceback
+                print(f"DETAILED ERROR processing site {site_id}, season {season}:")
+                print(f"  Exception type: {type(e).__name__}")
+                print(f"  Exception message: {str(e)}")
+                print(f"  Exception repr: {repr(e)}")
+                if hasattr(e, 'errno'):
+                    print(f"  Error code: {e.errno}")
+                print("  Full traceback:")
+                traceback.print_exc()
                 continue
 
 
@@ -1724,10 +1831,30 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     for reporter_id, group_id in consistent_groups.items():
         print(f"  Reporter {reporter_id} -> Group {group_id}")
     
+    # Validate group assignments and show group statistics
+    actual_groups = set(consistent_groups.values())
+    expected_groups = set(range(1, n_orientations + 1))
+    print(f"Expected groups: {sorted(expected_groups)}")
+    print(f"Actual groups: {sorted(actual_groups)}")
+    if actual_groups != expected_groups:
+        print(f"WARNING: Group mismatch! Missing groups: {expected_groups - actual_groups}")
+        print(f"Extra groups: {actual_groups - expected_groups}")
+    
     # ============================================================================
     # PHASE 3: CONSISTENT VISUALIZATION AND FINAL CALCULATIONS
     # ============================================================================
     print("Phase 3: Creating visualizations with consistent grouping...")
+    print_memory_status("Phase 3 start")
+    
+    # Check memory pressure and adjust batch size
+    memory_pressure = check_memory_pressure()
+    if memory_pressure:
+        print("WARNING: System under memory pressure - using smaller batch size")
+        batch_size = MAX_MEMORY_PRESSURE_BATCH_SIZE
+    else:
+        batch_size = VISUALIZATION_BATCH_SIZE
+    
+    print(f"Phase 3 will process {len(timestamp_data)} timestamps in batches of {batch_size}")
     
     # Create grouped modules based on consistent grouping
     consistent_grouped_modules = {}
@@ -1736,31 +1863,46 @@ def process_site_timestamps(merged_data: pd.DataFrame,
             consistent_grouped_modules[group_id] = []
         consistent_grouped_modules[group_id].append(reporter_id)
     
-    # Process visualizations using consistent grouping
+    # Process visualizations using consistent grouping with batch processing
     image_files = []  # Reset image files for consistent grouping plots
-    for timestamp_info in timestamp_data:
-        idx = timestamp_info['idx']
-        current_timestamp = timestamp_info['timestamp']
+    
+    # Split timestamp_data into batches
+    total_timestamps = len(timestamp_data)
+    for batch_start in range(0, total_timestamps, batch_size):
+        batch_end = min(batch_start + batch_size, total_timestamps)
+        current_batch = timestamp_data[batch_start:batch_end]
         
-        # Use consistent grouping for visualization
-        group_assignments = consistent_groups  # Use consistent groups instead of timestamp-specific
-        effective_groups = len(consistent_grouped_modules)
-        grouped_modules = consistent_grouped_modules
+        print(f"Processing visualization batch {batch_start//batch_size + 1}/{(total_timestamps + batch_size - 1)//batch_size}: timestamps {batch_start+1}-{batch_end}/{total_timestamps}")
+        print_memory_status(f"Batch start {batch_start//batch_size + 1}")
         
-        # Create visualization plots with consistent grouping
-        fig_long, axs_long = plt.subplots(1, 3, figsize=LONG_HOZ_FIGSIZE)
+        # Process current batch
+        for batch_idx, timestamp_info in enumerate(current_batch):
+            global_idx = batch_start + batch_idx
+            idx = timestamp_info['idx']
+            current_timestamp = timestamp_info['timestamp']
+            
+            # Use consistent grouping for visualization
+            group_assignments = consistent_groups  # Use consistent groups instead of timestamp-specific
+            effective_groups = len(consistent_grouped_modules)
+            grouped_modules = consistent_grouped_modules
+            
+            # Get actual group IDs (not necessarily consecutive)
+            actual_group_ids = sorted(consistent_grouped_modules.keys())
         
-        # Configure subplots with better spacing
-        subplot_titles = ["Recorded MPP values", "Reconstructed I-V curves", "Multi-String I-V curves"]
-        subplot_labels = ['(a)', '(b)', '(c)']
+            # Create visualization plots with consistent grouping
+            fig_long, axs_long = plt.subplots(1, 3, figsize=LONG_HOZ_FIGSIZE)
         
-        for i, (title, label) in enumerate(zip(subplot_titles, subplot_labels)):
-            axs_long[i].set_title(title, fontsize=TITLE_SIZE, pad=20)
-            axs_long[i].set_xlabel('Voltage (V)', fontsize=AXIS_LABEL_SIZE)
-            axs_long[i].set_ylabel('Current (A)', fontsize=AXIS_LABEL_SIZE)
-            axs_long[i].text(0.95, 0.95, label, transform=axs_long[i].transAxes, 
-                           fontsize=TEXT_SIZE, ha='right', va='top')
-            axs_long[i].tick_params(axis='both', labelsize=AXIS_NUM_SIZE)
+            # Configure subplots with better spacing
+            subplot_titles = ["Recorded MPP values", "Reconstructed I-V curves", "Multi-String I-V curves"]
+            subplot_labels = ['(a)', '(b)', '(c)']
+        
+            for i, (title, label) in enumerate(zip(subplot_titles, subplot_labels)):
+                axs_long[i].set_title(title, fontsize=TITLE_SIZE, pad=20)
+                axs_long[i].set_xlabel('Voltage (V)', fontsize=AXIS_LABEL_SIZE)
+                axs_long[i].set_ylabel('Current (A)', fontsize=AXIS_LABEL_SIZE)
+                axs_long[i].text(0.95, 0.95, label, transform=axs_long[i].transAxes, 
+                               fontsize=TEXT_SIZE, ha='right', va='top')
+                axs_long[i].tick_params(axis='both', labelsize=AXIS_NUM_SIZE)
 
         axs_long[0].set_xlim(X_LIMIT_MODULE)
         axs_long[0].set_ylim(Y_LIMIT_MODULE)
@@ -1773,7 +1915,8 @@ def process_site_timestamps(merged_data: pd.DataFrame,
         # Create color-coded plots for first two subplots using consistent grouping
         # Note: group_ranges needs to be recalculated for consistent groups
         consistent_group_ranges = []
-        for group_id in range(1, effective_groups + 1):
+        # CRITICAL FIX: Use actual group IDs instead of assuming consecutive 1,2,3,4
+        for group_id in actual_group_ids:
             reporter_list = consistent_grouped_modules[group_id]
             group_currents = []
             for reporter_id in reporter_list:
@@ -1829,12 +1972,31 @@ def process_site_timestamps(merged_data: pd.DataFrame,
         
         fig_long.suptitle(f"{title_row1}\n{title_row2}\n{title_row3}", fontsize=TITLE_SIZE, y=0.95)
         
-        # Adjust layout and save
-        plt.tight_layout(rect=[0, 0, 1, 0.85])
-        file_path = os.path.join(output_dir, f'long_horizontal_{timestamp_title.replace(":", "-").replace(" ", "_")}_consistent_grouped.png')
-        plt.savefig(file_path, bbox_inches='tight', dpi=150)
-        plt.close(fig_long)
-        image_files.append(file_path)
+        # Adjust layout and save with error handling
+        try:
+            plt.tight_layout(rect=[0, 0, 1, 0.85])
+            file_path = os.path.join(output_dir, f'long_horizontal_{timestamp_title.replace(":", "-").replace(" ", "_")}_consistent_grouped.png')
+            
+            # Check if directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            plt.savefig(file_path, bbox_inches='tight', dpi=150)
+            plt.close(fig_long)
+            image_files.append(file_path)
+            
+            # CRITICAL: Clean up matplotlib memory after each figure
+            cleanup_matplotlib_memory()
+            
+            # Monitor figure count and warn if excessive
+            if monitor_figure_count():
+                print(f"  Excessive figures detected at timestamp {idx+1} - forcing aggressive cleanup")
+                cleanup_matplotlib_memory()
+            
+        except Exception as save_error:
+            print(f"ERROR saving figure for timestamp {timestamp_title}: {save_error}")
+            plt.close(fig_long)  # Ensure figure is closed even on error
+            cleanup_matplotlib_memory()
+            # Continue processing other timestamps despite this error
         
         # Update consistent_multi_string_data with calculated consistent power values
         if idx < len(consistent_multi_string_data):
@@ -1850,8 +2012,26 @@ def process_site_timestamps(merged_data: pd.DataFrame,
         
         if idx % 20 == 0:
             print(f"  Processed consistent visualization {idx+1}/{len(timestamp_data)}: {consistent_multi_string_mismatch:.2f}% consistent multi")
+            print_memory_status(f"Phase 3 progress {idx+1}/{len(timestamp_data)}")
+            
+            # Check for memory pressure and warn
+            if check_memory_pressure():
+                print("WARNING: Memory pressure detected during Phase 3 - may need to reduce batch size")
+                cleanup_matplotlib_memory()  # Extra cleanup when under pressure
+        
+        # Batch completion cleanup and summary
+        print(f"  Completed batch {batch_start//batch_size + 1}: processed {len(current_batch)} timestamps")
+        print_memory_status(f"Batch end {batch_start//batch_size + 1}")
+        
+        # Aggressive cleanup between batches to prevent memory accumulation
+        cleanup_matplotlib_memory()
+        gc.collect()  # Force garbage collection between batches
     
     print(f"Phase 3 complete: Created {len(image_files)} consistent visualizations")
+    print_memory_status("Phase 3 complete")
+    
+    # Final memory cleanup after Phase 3
+    cleanup_matplotlib_memory()
     
     # Export results
     export_enhanced_results(
@@ -2039,16 +2219,16 @@ if __name__ == "__main__":
     print("Multi-Orientation Solar Array Mismatch Analysis")
     print("=" * 60)
     
-    # Process all multi-orientation sites
+    # Process spesific site
     run_multi_orientation_analysis(
-        site_ids=['3455043'],  # Process all multi-orientation sites
-        seasons=['spring'],  # Focus on spring season
-        num_days_to_plot=10  # Limit to 5 days for faster processing
+        site_ids=['4118327'],  # Process all multi-orientation sites
+        seasons=['autumn'],  # Focus on autumn season
+        num_days_to_plot=10  # Limit to 10 days for faster processing
     )
     
-    # Alternative: Process specific sites
+    # # run for all sites
     # run_multi_orientation_analysis(
-    #     site_ids=['3455043', '4111492'],  # Specific sites only
-    #     seasons=['spring', 'summer'],
-    #     num_days_to_plot=10
+    #     site_ids=None,  # Process all multi-orientation sites (from MULTI_ORIENTATION_SITES dictionary)
+    #     seasons=['summer', 'autumn', 'winter', 'spring'],  # Process all seasons
+    #     num_days_to_plot=10  # Keep at 10 days or adjust as needed
     # )

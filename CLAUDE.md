@@ -65,6 +65,11 @@ Advanced multi-orientation analysis with machine learning:
 - **`README_Multi_Orientation.md`**: Comprehensive documentation for the multi-orientation analysis workflow
 - **Enhanced Capabilities**: Per-timestamp K-means clustering, current-based module grouping, and sophisticated mismatch loss estimation for complex multi-orientation solar installations
 
+**Current Development Status:**
+- **Primary Analysis Tool**: `25_09_05_Mismatch_results_generator_multi.py` (95KB) is the most recent and comprehensive module
+- **Notebook Backup**: Original `25_09_03_Mismatch_results_generator_multi.ipynb` (15MB) provides Jupyter interface
+- **Legacy Support**: Original workflows in `25_04_27_Mismatch_results_generator_single.ipynb` remain functional
+
 **Benefits of New Architecture:**
 - Better separation of concerns and maintainability
 - Reusable components for multiple site analyses
@@ -264,11 +269,12 @@ jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Cu
 
 **Multi-Orientation Analysis Workflow (Latest Development):**
 ```bash
-# Recommended: Consistent multi-string analyzer (latest stable version)
-python Code/25_09_08_Mismatch_results_generator_multi_consistent.py
-
-# Alternative: Advanced Python module with K-means clustering  
+# Primary: Advanced Python module with K-means clustering (most recent)
 python Code/25_09_05_Mismatch_results_generator_multi.py
+
+# Note: The consistent multi-string analyzer (25_09_08_*) may not be present in all installations
+# Check file availability before executing:
+ls Code/25_09_08_Mismatch_results_generator_multi_consistent.py
 
 # Alternative: Jupyter notebook interface (traditional)
 jupyter notebook Code/25_09_03_Mismatch_results_generator_multi.ipynb
@@ -368,29 +374,32 @@ ls -la Data/ Results/ Code/
 - Standard: `os`, `sys`, `datetime`, `json`, `requests`, `pathlib`, `shutil`, `tempfile`
 
 **Development Environment:**
-- Jupyter notebooks are the primary development interface
-- All notebooks should be run in the same Python environment
-- No virtual environment configuration files present - use system Python or manually create environment
+- **Primary Interface**: Jupyter notebooks for interactive analysis and visualization
+- **Module Development**: Python (.py) files for production analysis workflows
+- **Environment Management**: No virtual environment configuration files present - use system Python or manually create environment
+- **Dependency Installation**: Use pip to install all required libraries (no requirements.txt available)
 
 ## Common Development Tasks
 
 **Modern Development Workflow (Recommended):**
 1. **Multi-Orientation Analysis**: Use Python modules for advanced clustering-based analysis
    ```bash
-   python Code/25_09_05_Mismatch_results_generator_multi.py  # K-means clustering
-   python Code/consistent_multi_string_analyzer.py           # Refined approach
+   python Code/25_09_05_Mismatch_results_generator_multi.py  # K-means clustering (verified present)
+   # Note: consistent_multi_string_analyzer.py may not exist - use the above module
    ```
 2. **Traditional Analysis**: Use object-oriented class-based approach
    ```bash
-   jupyter notebook Code/25_08_04_Mismatch_results_generator_refactored.ipynb
+   # Check if refactored notebook exists:
+   ls Code/25_08_04_Mismatch_results_generator_refactored.ipynb
+   # If not available, use: jupyter notebook Code/mismatch_analysis.py (as module)
    ```
 3. **Statistical Analysis**: Execute analyzer notebook for cross-site analysis
    ```bash
-   jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
+   jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb  # Verified present
    ```
 
 **Legacy Workflow (Original):**
-1. Execute `25_04_27_Mismatch_results_generator.ipynb` to process raw data
+1. Execute `25_04_27_Mismatch_results_generator_single.ipynb` to process raw data (verified present)
 2. Execute `25_07_22_Mismatch_results_analyser.ipynb` to analyze results (includes Section 6 for daily analysis)
 3. Results automatically saved to timestamped folders in `Results/v_from_i_combined/`
 

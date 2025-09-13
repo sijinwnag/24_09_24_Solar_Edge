@@ -22,7 +22,8 @@
       "Bash(copy:*)",
       "WebFetch(domain:www.nextracker.com)",
       "WebFetch(domain:apvi.org.au)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "WebSearch"
     ],
     "deny": []
   },
