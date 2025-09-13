@@ -384,13 +384,14 @@ def determine_consistent_groups(grouping_history: List[Dict[str, int]],
                                reporter_ids: List[str]) -> Dict[str, int]:
     """
     Analyze time series of group assignments to determine consistent group for each module.
+    Enhanced with iterative reassignment to ensure all expected groups are represented.
     
     Args:
         grouping_history: List of group assignment dictionaries from each timestamp
         reporter_ids: List of reporter IDs
         
     Returns:
-        Dictionary mapping reporter_id to consistent_group_number based on most frequent assignment
+        Dictionary mapping reporter_id to consistent_group_number with all groups guaranteed to be present
     """
     from collections import Counter, defaultdict
     
@@ -402,16 +403,80 @@ def determine_consistent_groups(grouping_history: List[Dict[str, int]],
         for reporter_id, group_id in group_assignments.items():
             reporter_group_counts[reporter_id][group_id] += 1
     
-    # Determine most frequent group for each reporter
+    # Store complete frequency rankings for each reporter (for iterative reassignment)
+    reporter_frequency_rankings = {}
+    
+    # Phase 1: Primary assignment - most frequent group for each reporter
     consistent_groups = {}
     for reporter_id in reporter_ids:
         if reporter_id in reporter_group_counts and reporter_group_counts[reporter_id]:
-            # Find the most common group assignment
-            most_common_group = reporter_group_counts[reporter_id].most_common(1)[0][0]
+            # Get full frequency ranking (sorted by frequency, descending)
+            frequency_ranking = reporter_group_counts[reporter_id].most_common()
+            reporter_frequency_rankings[reporter_id] = frequency_ranking
+            
+            # Assign to most common group
+            most_common_group = frequency_ranking[0][0]
             consistent_groups[reporter_id] = most_common_group
         else:
             # Fallback: assign to group 1 if no data
             consistent_groups[reporter_id] = 1
+            reporter_frequency_rankings[reporter_id] = [(1, 1)]  # Dummy ranking
+    
+    # Phase 2: Ensure all expected groups are represented
+    # Determine expected groups from all group assignments in history
+    all_groups_seen = set()
+    for group_assignments in grouping_history:
+        all_groups_seen.update(group_assignments.values())
+    
+    expected_groups = set(range(1, max(all_groups_seen) + 1)) if all_groups_seen else {1}
+    assigned_groups = set(consistent_groups.values())
+    missing_groups = expected_groups - assigned_groups
+    
+    if missing_groups:
+        print(f"INFO: Missing groups {sorted(missing_groups)} detected, applying iterative reassignment...")
+        
+        # Phase 3: Iterative reassignment for missing groups
+        for missing_group in sorted(missing_groups):
+            print(f"INFO: Attempting to restore missing group {missing_group}")
+            
+            # Try different frequency ranks (2nd most frequent, 3rd most frequent, etc.)
+            for rank_index in range(1, 10):  # Try up to 10th most frequent
+                restored = False
+                
+                # Find reporters where missing_group appears at this frequency rank
+                candidates = []
+                for reporter_id in reporter_ids:
+                    rankings = reporter_frequency_rankings[reporter_id]
+                    if len(rankings) > rank_index:  # Check if rank exists
+                        if rankings[rank_index][0] == missing_group:
+                            current_group = consistent_groups[reporter_id]
+                            frequency_at_rank = rankings[rank_index][1]
+                            candidates.append((reporter_id, current_group, frequency_at_rank))
+                
+                if candidates:
+                    # Select the candidate with highest frequency for the missing group
+                    best_candidate = max(candidates, key=lambda x: x[2])
+                    reporter_to_reassign, old_group, frequency = best_candidate
+                    
+                    # Reassign this reporter to the missing group
+                    consistent_groups[reporter_to_reassign] = missing_group
+                    print(f"INFO: Reassigned reporter {reporter_to_reassign} from group {old_group} to group {missing_group} (frequency: {frequency})")
+                    restored = True
+                    break
+                
+                if restored:
+                    break
+            
+            if not restored:
+                print(f"WARNING: Could not restore missing group {missing_group} - no suitable candidates found")
+    
+    # Final validation
+    final_assigned_groups = set(consistent_groups.values())
+    still_missing = expected_groups - final_assigned_groups
+    if still_missing:
+        print(f"WARNING: Groups {sorted(still_missing)} still missing after iterative reassignment")
+    else:
+        print(f"INFO: All expected groups {sorted(expected_groups)} successfully represented")
     
     return consistent_groups
 
