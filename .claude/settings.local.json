@@ -24,7 +24,8 @@
       "WebFetch(domain:apvi.org.au)",
       "Bash(pip install:*)",
       "WebSearch",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(timeout 120 python \"25_09_05_Mismatch_results_generator_multi.py\")"
     ],
     "deny": []
   },

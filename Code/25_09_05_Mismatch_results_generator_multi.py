@@ -18,30 +18,16 @@ import json
 import requests
 import numpy as np
 import pandas as pd
-
-# CRITICAL: Configure matplotlib backend before importing pyplot to prevent SystemExit errors
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for headless operation
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-
 import pvlib
 import imageio
 import datetime
 from datetime import timedelta
 import scipy.constants as const
+import matplotlib.dates as mdates
 from typing import Dict, List, Tuple, Optional, Union
 import warnings
 from sklearn.cluster import KMeans
-import gc  # For garbage collection and memory management
-
-# Optional system resource monitoring (graceful fallback if not available)
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-    print("Warning: psutil not available - system monitoring limited")
 
 # ============================================================================
 # CONFIGURATION AND CONSTANTS
@@ -54,8 +40,7 @@ MULTI_ORIENTATION_SITES = {
     '4111800': 4,
     '4118327': 4,
     '3794347': 5,
-    # '4173851': 2 # Cannot determine the number of orientations from the satelite image
-    # 4129142, cannot determine the number of orientations from the satelite image
+    # '4173851': 4 # unknown number of orientations
 }
 
 # Directory configuration
@@ -83,15 +68,6 @@ USE_A_T = True  # Use ambient temperature instead of panel temperature
 BOLTZMANN_CONSTANT = const.Boltzmann
 ELECTRON_CHARGE = const.e
 
-# Batch processing parameters for memory management
-VISUALIZATION_BATCH_SIZE = 100  # Process visualizations in batches to prevent memory exhaustion
-MAX_MEMORY_PRESSURE_BATCH_SIZE = 25  # Smaller batch size when system under memory pressure
-
-# Matplotlib memory management
-import matplotlib.pyplot as plt
-plt.rcParams['figure.max_open_warning'] = 50  # Increase warning threshold
-plt.rcParams['agg.path.chunksize'] = 10000  # Reduce memory usage for complex plots
-
 # Timestamp formats for parsing
 TIMESTAMP_FORMATS = [
     "%Y-%m-%d %H:%M:%S",
@@ -115,81 +91,6 @@ SEASON_MONTHS_NORTH = {
     'winter': ['december', 'january', 'february'],
     'spring': ['march', 'april', 'may']
 }
-
-# ============================================================================
-# MEMORY MANAGEMENT AND SYSTEM UTILITIES
-# ============================================================================
-
-def get_memory_usage_mb():
-    """Get current memory usage in MB with graceful fallback."""
-    if PSUTIL_AVAILABLE:
-        try:
-            process = psutil.Process()
-            return process.memory_info().rss / 1024 / 1024
-        except Exception:
-            pass
-    return 0  # Fallback if psutil unavailable or fails
-
-def cleanup_matplotlib_memory():
-    """Comprehensive matplotlib memory cleanup."""
-    try:
-        # Get figure count before cleanup
-        fig_count_before = len(plt.get_fignums())
-        
-        # Close all figures
-        plt.close('all')
-        
-        # Clear matplotlib caches
-        if hasattr(plt, '_original_backend_map'):
-            plt._original_backend_map.clear()
-        
-        # Clear figure manager if available
-        if hasattr(plt, '_pylab_helpers'):
-            plt._pylab_helpers.Gcf.figs.clear()
-        
-        # Force garbage collection
-        gc.collect()
-        
-        # Check if cleanup was successful
-        fig_count_after = len(plt.get_fignums())
-        if fig_count_before > 0:
-            print(f"Matplotlib cleanup: closed {fig_count_before} figures, {fig_count_after} remaining")
-            
-    except Exception as e:
-        print(f"Warning: matplotlib cleanup had issues: {e}")
-
-def monitor_figure_count():
-    """Monitor and warn about excessive figure count."""
-    fig_count = len(plt.get_fignums())
-    if fig_count > 15:
-        print(f"WARNING: {fig_count} matplotlib figures open - potential memory issue")
-        return True
-    return False
-
-def check_memory_pressure(threshold_mb=4096):
-    """Check if system is under memory pressure."""
-    if not PSUTIL_AVAILABLE:
-        return False
-    try:
-        memory_percent = psutil.virtual_memory().percent
-        available_gb = psutil.virtual_memory().available / (1024**3)
-        return memory_percent > 85 or available_gb < (threshold_mb/1024)
-    except Exception:
-        return False
-
-def print_memory_status(context=""):
-    """Print current memory status with context."""
-    memory_mb = get_memory_usage_mb()
-    context_str = f" [{context}]" if context else ""
-    
-    if PSUTIL_AVAILABLE:
-        try:
-            system_memory = psutil.virtual_memory()
-            print(f"Memory{context_str}: Process={memory_mb:.1f}MB, System={system_memory.percent:.1f}% used, Available={system_memory.available/(1024**3):.1f}GB")
-        except Exception:
-            print(f"Memory{context_str}: Process={memory_mb:.1f}MB (system info unavailable)")
-    else:
-        print(f"Memory{context_str}: Monitoring limited (psutil unavailable)")
 
 # ============================================================================
 # UTILITY FUNCTIONS (FROM ORIGINAL WORKFLOW)
@@ -384,14 +285,13 @@ def determine_consistent_groups(grouping_history: List[Dict[str, int]],
                                reporter_ids: List[str]) -> Dict[str, int]:
     """
     Analyze time series of group assignments to determine consistent group for each module.
-    Enhanced with iterative reassignment to ensure all expected groups are represented.
     
     Args:
         grouping_history: List of group assignment dictionaries from each timestamp
         reporter_ids: List of reporter IDs
         
     Returns:
-        Dictionary mapping reporter_id to consistent_group_number with all groups guaranteed to be present
+        Dictionary mapping reporter_id to consistent_group_number based on most frequent assignment
     """
     from collections import Counter, defaultdict
     
@@ -403,80 +303,16 @@ def determine_consistent_groups(grouping_history: List[Dict[str, int]],
         for reporter_id, group_id in group_assignments.items():
             reporter_group_counts[reporter_id][group_id] += 1
     
-    # Store complete frequency rankings for each reporter (for iterative reassignment)
-    reporter_frequency_rankings = {}
-    
-    # Phase 1: Primary assignment - most frequent group for each reporter
+    # Determine most frequent group for each reporter
     consistent_groups = {}
     for reporter_id in reporter_ids:
         if reporter_id in reporter_group_counts and reporter_group_counts[reporter_id]:
-            # Get full frequency ranking (sorted by frequency, descending)
-            frequency_ranking = reporter_group_counts[reporter_id].most_common()
-            reporter_frequency_rankings[reporter_id] = frequency_ranking
-            
-            # Assign to most common group
-            most_common_group = frequency_ranking[0][0]
+            # Find the most common group assignment
+            most_common_group = reporter_group_counts[reporter_id].most_common(1)[0][0]
             consistent_groups[reporter_id] = most_common_group
         else:
             # Fallback: assign to group 1 if no data
             consistent_groups[reporter_id] = 1
-            reporter_frequency_rankings[reporter_id] = [(1, 1)]  # Dummy ranking
-    
-    # Phase 2: Ensure all expected groups are represented
-    # Determine expected groups from all group assignments in history
-    all_groups_seen = set()
-    for group_assignments in grouping_history:
-        all_groups_seen.update(group_assignments.values())
-    
-    expected_groups = set(range(1, max(all_groups_seen) + 1)) if all_groups_seen else {1}
-    assigned_groups = set(consistent_groups.values())
-    missing_groups = expected_groups - assigned_groups
-    
-    if missing_groups:
-        print(f"INFO: Missing groups {sorted(missing_groups)} detected, applying iterative reassignment...")
-        
-        # Phase 3: Iterative reassignment for missing groups
-        for missing_group in sorted(missing_groups):
-            print(f"INFO: Attempting to restore missing group {missing_group}")
-            
-            # Try different frequency ranks (2nd most frequent, 3rd most frequent, etc.)
-            for rank_index in range(1, 10):  # Try up to 10th most frequent
-                restored = False
-                
-                # Find reporters where missing_group appears at this frequency rank
-                candidates = []
-                for reporter_id in reporter_ids:
-                    rankings = reporter_frequency_rankings[reporter_id]
-                    if len(rankings) > rank_index:  # Check if rank exists
-                        if rankings[rank_index][0] == missing_group:
-                            current_group = consistent_groups[reporter_id]
-                            frequency_at_rank = rankings[rank_index][1]
-                            candidates.append((reporter_id, current_group, frequency_at_rank))
-                
-                if candidates:
-                    # Select the candidate with highest frequency for the missing group
-                    best_candidate = max(candidates, key=lambda x: x[2])
-                    reporter_to_reassign, old_group, frequency = best_candidate
-                    
-                    # Reassign this reporter to the missing group
-                    consistent_groups[reporter_to_reassign] = missing_group
-                    print(f"INFO: Reassigned reporter {reporter_to_reassign} from group {old_group} to group {missing_group} (frequency: {frequency})")
-                    restored = True
-                    break
-                
-                if restored:
-                    break
-            
-            if not restored:
-                print(f"WARNING: Could not restore missing group {missing_group} - no suitable candidates found")
-    
-    # Final validation
-    final_assigned_groups = set(consistent_groups.values())
-    still_missing = expected_groups - final_assigned_groups
-    if still_missing:
-        print(f"WARNING: Groups {sorted(still_missing)} still missing after iterative reassignment")
-    else:
-        print(f"INFO: All expected groups {sorted(expected_groups)} successfully represented")
     
     return consistent_groups
 
@@ -618,16 +454,17 @@ def create_color_coded_plots(group_assignments: Dict[str, int],
         - legend_handles: List of legend handles for plot (b)
         - legend_labels: List of legend labels for plot (b)
     """
-    # Create viridis colormap for groups
-    colors = plt.cm.viridis(np.linspace(0, 1, max(n_groups, 3)))
-    group_colors = {i+1: colors[i] for i in range(n_groups)}
-    
-    # Group modules by assignment
+    # Group modules by assignment first to determine actual group IDs
     grouped_modules = {}
     for reporter_id, group_id in group_assignments.items():
         if group_id not in grouped_modules:
             grouped_modules[group_id] = []
         grouped_modules[group_id].append(reporter_id)
+
+    # Create viridis colormap for ACTUAL groups (not sequential)
+    actual_group_ids = sorted(grouped_modules.keys())  # Get actual group IDs present
+    colors = plt.cm.viridis(np.linspace(0, 1, max(len(actual_group_ids), 3)))
+    group_colors = {group_id: colors[i] for i, group_id in enumerate(actual_group_ids)}
     
     # Plot raw MPP values (colored by group)
     plotted_groups = set()
@@ -1390,15 +1227,7 @@ def run_multi_orientation_analysis(site_ids: Optional[List[str]] = None,
                 print(f"Results saved to: {results_folder}")
                 
             except Exception as e:
-                import traceback
-                print(f"DETAILED ERROR processing site {site_id}, season {season}:")
-                print(f"  Exception type: {type(e).__name__}")
-                print(f"  Exception message: {str(e)}")
-                print(f"  Exception repr: {repr(e)}")
-                if hasattr(e, 'errno'):
-                    print(f"  Error code: {e.errno}")
-                print("  Full traceback:")
-                traceback.print_exc()
+                print(f"Error processing site {site_id}, season {season}: {str(e)}")
                 continue
 
 
@@ -1895,31 +1724,30 @@ def process_site_timestamps(merged_data: pd.DataFrame,
     print(f"Consistent group assignments determined:")
     for reporter_id, group_id in consistent_groups.items():
         print(f"  Reporter {reporter_id} -> Group {group_id}")
-    
-    # Validate group assignments and show group statistics
-    actual_groups = set(consistent_groups.values())
-    expected_groups = set(range(1, n_orientations + 1))
-    print(f"Expected groups: {sorted(expected_groups)}")
-    print(f"Actual groups: {sorted(actual_groups)}")
-    if actual_groups != expected_groups:
-        print(f"WARNING: Group mismatch! Missing groups: {expected_groups - actual_groups}")
-        print(f"Extra groups: {actual_groups - expected_groups}")
-    
+
+    # Validate consistent groups
+    expected_groups = set(range(1, n_orientations + 1))  # Expected groups: {1, 2, 3, 4}
+    actual_groups = set(consistent_groups.values())      # Actual groups: e.g. {1, 3, 4}
+    missing_groups = expected_groups - actual_groups
+
+    if missing_groups:
+        print(f"WARNING: Missing groups in consistent assignment: {sorted(missing_groups)}")
+        print(f"  Expected: {sorted(expected_groups)}")
+        print(f"  Actual: {sorted(actual_groups)}")
+        print(f"  This is normal - some orientation groups may not be consistently dominant")
+    else:
+        print(f"✓ All expected groups present: {sorted(actual_groups)}")
+
+    # Group membership summary
+    group_sizes = {}
+    for group_id in actual_groups:
+        group_sizes[group_id] = sum(1 for g in consistent_groups.values() if g == group_id)
+    print(f"Group sizes: {dict(sorted(group_sizes.items()))}")
+
     # ============================================================================
     # PHASE 3: CONSISTENT VISUALIZATION AND FINAL CALCULATIONS
     # ============================================================================
     print("Phase 3: Creating visualizations with consistent grouping...")
-    print_memory_status("Phase 3 start")
-    
-    # Check memory pressure and adjust batch size
-    memory_pressure = check_memory_pressure()
-    if memory_pressure:
-        print("WARNING: System under memory pressure - using smaller batch size")
-        batch_size = MAX_MEMORY_PRESSURE_BATCH_SIZE
-    else:
-        batch_size = VISUALIZATION_BATCH_SIZE
-    
-    print(f"Phase 3 will process {len(timestamp_data)} timestamps in batches of {batch_size}")
     
     # Create grouped modules based on consistent grouping
     consistent_grouped_modules = {}
@@ -1928,175 +1756,135 @@ def process_site_timestamps(merged_data: pd.DataFrame,
             consistent_grouped_modules[group_id] = []
         consistent_grouped_modules[group_id].append(reporter_id)
     
-    # Process visualizations using consistent grouping with batch processing
+    # Process visualizations using consistent grouping
     image_files = []  # Reset image files for consistent grouping plots
-    
-    # Split timestamp_data into batches
-    total_timestamps = len(timestamp_data)
-    for batch_start in range(0, total_timestamps, batch_size):
-        batch_end = min(batch_start + batch_size, total_timestamps)
-        current_batch = timestamp_data[batch_start:batch_end]
-        
-        print(f"Processing visualization batch {batch_start//batch_size + 1}/{(total_timestamps + batch_size - 1)//batch_size}: timestamps {batch_start+1}-{batch_end}/{total_timestamps}")
-        print_memory_status(f"Batch start {batch_start//batch_size + 1}")
-        
-        # Process current batch
-        for batch_idx, timestamp_info in enumerate(current_batch):
-            global_idx = batch_start + batch_idx
+    visualization_errors = 0
+    for timestamp_info in timestamp_data:
+        try:
             idx = timestamp_info['idx']
             current_timestamp = timestamp_info['timestamp']
-            
+
             # Use consistent grouping for visualization
             group_assignments = consistent_groups  # Use consistent groups instead of timestamp-specific
             effective_groups = len(consistent_grouped_modules)
             grouped_modules = consistent_grouped_modules
-            
-            # Get actual group IDs (not necessarily consecutive)
-            actual_group_ids = sorted(consistent_grouped_modules.keys())
-        
+
             # Create visualization plots with consistent grouping
             fig_long, axs_long = plt.subplots(1, 3, figsize=LONG_HOZ_FIGSIZE)
-        
+
             # Configure subplots with better spacing
             subplot_titles = ["Recorded MPP values", "Reconstructed I-V curves", "Multi-String I-V curves"]
             subplot_labels = ['(a)', '(b)', '(c)']
-        
+
             for i, (title, label) in enumerate(zip(subplot_titles, subplot_labels)):
                 axs_long[i].set_title(title, fontsize=TITLE_SIZE, pad=20)
                 axs_long[i].set_xlabel('Voltage (V)', fontsize=AXIS_LABEL_SIZE)
                 axs_long[i].set_ylabel('Current (A)', fontsize=AXIS_LABEL_SIZE)
-                axs_long[i].text(0.95, 0.95, label, transform=axs_long[i].transAxes, 
+                axs_long[i].text(0.95, 0.95, label, transform=axs_long[i].transAxes,
                                fontsize=TEXT_SIZE, ha='right', va='top')
                 axs_long[i].tick_params(axis='both', labelsize=AXIS_NUM_SIZE)
 
-        axs_long[0].set_xlim(X_LIMIT_MODULE)
-        axs_long[0].set_ylim(Y_LIMIT_MODULE)
-        axs_long[1].set_xlim(X_LIMIT_MODULE)
-        axs_long[1].set_ylim(Y_LIMIT_MODULE)
-        vmax_scaled = X_LIMIT_INVERTER[1] 
-        axs_long[2].set_xlim((0, vmax_scaled))
-        axs_long[2].set_ylim(Y_LIMIT_INVERTER)
+            axs_long[0].set_xlim(X_LIMIT_MODULE)
+            axs_long[0].set_ylim(Y_LIMIT_MODULE)
+            axs_long[1].set_xlim(X_LIMIT_MODULE)
+            axs_long[1].set_ylim(Y_LIMIT_MODULE)
+            vmax_scaled = X_LIMIT_INVERTER[1]
+            axs_long[2].set_xlim((0, vmax_scaled))
+            axs_long[2].set_ylim(Y_LIMIT_INVERTER)
         
-        # Create color-coded plots for first two subplots using consistent grouping
-        # Note: group_ranges needs to be recalculated for consistent groups
-        consistent_group_ranges = []
-        # CRITICAL FIX: Use actual group IDs instead of assuming consecutive 1,2,3,4
-        for group_id in actual_group_ids:
-            reporter_list = consistent_grouped_modules[group_id]
-            group_currents = []
-            for reporter_id in reporter_list:
-                current_col = f'panel_current_{reporter_id}'
-                if current_col in merged_data.columns:
-                    current_val = merged_data[current_col].iloc[idx]
-                    if not (np.isnan(current_val) or current_val <= 0):
-                        group_currents.append(current_val)
-            if group_currents:
-                consistent_group_ranges.append((min(group_currents), max(group_currents)))
-            else:
-                consistent_group_ranges.append((0, 0))
-        
-        group_colors, legend_handles, legend_labels = create_color_coded_plots(
-            group_assignments, effective_groups, merged_data, idx, 
-            reporter_ids, axs_long, currents, module_params, consistent_group_ranges
-        )
-        
-        # Plot multi-string I-V curves using consistent grouping
-        plot_multi_string_iv_curves(
-            grouped_modules, merged_data, idx, currents, module_params, axs_long, group_colors
-        )
-        
-        # Add legend for plot (b)
-        if legend_handles and legend_labels:
-            fig_long.legend(legend_handles, legend_labels, 
-                          bbox_to_anchor=(0.5, 0.7), loc='center', 
-                          fontsize=AXIS_NUM_SIZE-3, ncol=len(legend_labels), 
-                          framealpha=1, facecolor='white', edgecolor='black', 
-                          fancybox=True, shadow=False)
-        
-        # Calculate consistent multi-string power
-        consistent_multi_string_power, consistent_group_powers, _ = calculate_multi_string_series_power(
-            consistent_grouped_modules, merged_data, idx, currents, module_params
-        )
-        
-        # Calculate traditional mismatch for comparison
-        sum_iv = sum(merged_data[f'panel_voltage_{opt}'].iloc[idx] * merged_data[f'panel_current_{opt}'].iloc[idx] 
-                     for opt in reporter_ids 
-                     if f'panel_voltage_{opt}' in merged_data.columns and f'panel_current_{opt}' in merged_data.columns
-                     and not (np.isnan(merged_data[f'panel_voltage_{opt}'].iloc[idx]) or np.isnan(merged_data[f'panel_current_{opt}'].iloc[idx])))
-        
-        # Use original timestamp-based calculations for traditional comparison
-        original_max_power = timestamp_info.get('traditional_max_power', np.nan)  # Will need to store this in Phase 1
-        traditional_mismatch = ((sum_iv - original_max_power) / sum_iv * 100) if sum_iv > 0 and not np.isnan(original_max_power) else 0
-        consistent_multi_string_mismatch = ((sum_iv - consistent_multi_string_power) / sum_iv * 100) if sum_iv > 0 else 0
-        
-        # Create plot titles with consistent multi-string information
-        timestamp_title = current_timestamp.strftime('%Y-%m-%d %H:%M:%S')
-        title_row1 = f"Site: {site_id} | {timestamp_title} | Consistent Groups: {effective_groups}"
-        title_row2 = f"Sum MPP: {sum_iv:.1f}W | Trad. Series: {original_max_power:.1f}W | Consistent Multi-String: {consistent_multi_string_power:.1f}W"
-        title_row3 = f"Trad. Loss: {traditional_mismatch:.2f}% | Consistent Multi-String Loss: {consistent_multi_string_mismatch:.2f}%"
-        
-        fig_long.suptitle(f"{title_row1}\n{title_row2}\n{title_row3}", fontsize=TITLE_SIZE, y=0.95)
-        
-        # Adjust layout and save with error handling
-        try:
+            # Create color-coded plots for first two subplots using consistent grouping
+            # Note: group_ranges needs to be recalculated for consistent groups
+            consistent_group_ranges = []
+            for group_id in sorted(consistent_grouped_modules.keys()):  # Use actual group IDs, not sequential
+                reporter_list = consistent_grouped_modules[group_id]
+                group_currents = []
+                for reporter_id in reporter_list:
+                    current_col = f'panel_current_{reporter_id}'
+                    if current_col in merged_data.columns:
+                        current_val = merged_data[current_col].iloc[idx]
+                        if not (np.isnan(current_val) or current_val <= 0):
+                            group_currents.append(current_val)
+                if group_currents:
+                    consistent_group_ranges.append((min(group_currents), max(group_currents)))
+                else:
+                    consistent_group_ranges.append((0, 0))
+
+            group_colors, legend_handles, legend_labels = create_color_coded_plots(
+                group_assignments, effective_groups, merged_data, idx,
+                reporter_ids, axs_long, currents, module_params, consistent_group_ranges
+            )
+
+            # Plot multi-string I-V curves using consistent grouping
+            plot_multi_string_iv_curves(
+                grouped_modules, merged_data, idx, currents, module_params, axs_long, group_colors
+            )
+
+            # Add legend for plot (b)
+            if legend_handles and legend_labels:
+                fig_long.legend(legend_handles, legend_labels,
+                              bbox_to_anchor=(0.5, 0.7), loc='center',
+                              fontsize=AXIS_NUM_SIZE-3, ncol=len(legend_labels),
+                              framealpha=1, facecolor='white', edgecolor='black',
+                              fancybox=True, shadow=False)
+
+            # Calculate consistent multi-string power
+            consistent_multi_string_power, consistent_group_powers, _ = calculate_multi_string_series_power(
+                consistent_grouped_modules, merged_data, idx, currents, module_params
+            )
+
+            # Calculate traditional mismatch for comparison
+            sum_iv = sum(merged_data[f'panel_voltage_{opt}'].iloc[idx] * merged_data[f'panel_current_{opt}'].iloc[idx]
+                         for opt in reporter_ids
+                         if f'panel_voltage_{opt}' in merged_data.columns and f'panel_current_{opt}' in merged_data.columns
+                         and not (np.isnan(merged_data[f'panel_voltage_{opt}'].iloc[idx]) or np.isnan(merged_data[f'panel_current_{opt}'].iloc[idx])))
+
+            # Use original timestamp-based calculations for traditional comparison
+            original_max_power = timestamp_info.get('traditional_max_power', np.nan)  # Will need to store this in Phase 1
+            traditional_mismatch = ((sum_iv - original_max_power) / sum_iv * 100) if sum_iv > 0 and not np.isnan(original_max_power) else 0
+            consistent_multi_string_mismatch = ((sum_iv - consistent_multi_string_power) / sum_iv * 100) if sum_iv > 0 else 0
+            # Create plot titles with consistent multi-string information
+            timestamp_title = current_timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            title_row1 = f"Site: {site_id} | {timestamp_title} | Consistent Groups: {effective_groups}"
+            title_row2 = f"Sum MPP: {sum_iv:.1f}W | Trad. Series: {original_max_power:.1f}W | Consistent Multi-String: {consistent_multi_string_power:.1f}W"
+            title_row3 = f"Trad. Loss: {traditional_mismatch:.2f}% | Consistent Multi-String Loss: {consistent_multi_string_mismatch:.2f}%"
+
+            fig_long.suptitle(f"{title_row1}\n{title_row2}\n{title_row3}", fontsize=TITLE_SIZE, y=0.95)
+
+            # Adjust layout and save
             plt.tight_layout(rect=[0, 0, 1, 0.85])
             file_path = os.path.join(output_dir, f'long_horizontal_{timestamp_title.replace(":", "-").replace(" ", "_")}_consistent_grouped.png')
-            
-            # Check if directory exists
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
             plt.savefig(file_path, bbox_inches='tight', dpi=150)
             plt.close(fig_long)
             image_files.append(file_path)
-            
-            # CRITICAL: Clean up matplotlib memory after each figure
-            cleanup_matplotlib_memory()
-            
-            # Monitor figure count and warn if excessive
-            if monitor_figure_count():
-                print(f"  Excessive figures detected at timestamp {idx+1} - forcing aggressive cleanup")
-                cleanup_matplotlib_memory()
-            
-        except Exception as save_error:
-            print(f"ERROR saving figure for timestamp {timestamp_title}: {save_error}")
-            plt.close(fig_long)  # Ensure figure is closed even on error
-            cleanup_matplotlib_memory()
-            # Continue processing other timestamps despite this error
-        
-        # Update consistent_multi_string_data with calculated consistent power values
-        if idx < len(consistent_multi_string_data):
-            # Update existing row with consistent power values
-            consistent_multi_string_data.loc[consistent_multi_string_data.index[idx], 'Consistent_Multi_String_Power (W)'] = consistent_multi_string_power
-        else:
-            # This should rarely happen since we initialize in Phase 1, but handle it just in case
-            consistent_row = pd.DataFrame({
-                'Timestamp': [timestamp_title], 
-                'Consistent_Multi_String_Power (W)': [consistent_multi_string_power]
-            })
-            consistent_multi_string_data = pd.concat([consistent_multi_string_data, consistent_row], ignore_index=True)
-        
-        if idx % 20 == 0:
-            print(f"  Processed consistent visualization {idx+1}/{len(timestamp_data)}: {consistent_multi_string_mismatch:.2f}% consistent multi")
-            print_memory_status(f"Phase 3 progress {idx+1}/{len(timestamp_data)}")
-            
-            # Check for memory pressure and warn
-            if check_memory_pressure():
-                print("WARNING: Memory pressure detected during Phase 3 - may need to reduce batch size")
-                cleanup_matplotlib_memory()  # Extra cleanup when under pressure
-        
-        # Batch completion cleanup and summary
-        print(f"  Completed batch {batch_start//batch_size + 1}: processed {len(current_batch)} timestamps")
-        print_memory_status(f"Batch end {batch_start//batch_size + 1}")
-        
-        # Aggressive cleanup between batches to prevent memory accumulation
-        cleanup_matplotlib_memory()
-        gc.collect()  # Force garbage collection between batches
-    
+
+            # Update consistent_multi_string_data with calculated consistent power values
+            if idx < len(consistent_multi_string_data):
+                # Update existing row with consistent power values
+                consistent_multi_string_data.loc[consistent_multi_string_data.index[idx], 'Consistent_Multi_String_Power (W)'] = consistent_multi_string_power
+            else:
+                # This should rarely happen since we initialize in Phase 1, but handle it just in case
+                consistent_row = pd.DataFrame({
+                    'Timestamp': [timestamp_title],
+                    'Consistent_Multi_String_Power (W)': [consistent_multi_string_power]
+                })
+                consistent_multi_string_data = pd.concat([consistent_multi_string_data, consistent_row], ignore_index=True)
+
+            if idx % 20 == 0:
+                print(f"  Processed consistent visualization {idx+1}/{len(timestamp_data)}: {consistent_multi_string_mismatch:.2f}% consistent multi")
+
+        except Exception as e:
+            visualization_errors += 1
+            print(f"  WARNING: Failed to process timestamp {idx} ({current_timestamp}): {str(e)}")
+            # Close any open figure to prevent memory leaks
+            try:
+                plt.close(fig_long)
+            except:
+                pass
+            continue
+
     print(f"Phase 3 complete: Created {len(image_files)} consistent visualizations")
-    print_memory_status("Phase 3 complete")
-    
-    # Final memory cleanup after Phase 3
-    cleanup_matplotlib_memory()
+    if visualization_errors > 0:
+        print(f"WARNING: {visualization_errors} visualization errors occurred (non-critical)")
     
     # Export results
     export_enhanced_results(
@@ -2286,12 +2074,12 @@ if __name__ == "__main__":
     
     # Process spesific site
     run_multi_orientation_analysis(
-        site_ids=['4118327'],  # Process all multi-orientation sites
-        seasons=['autumn'],  # Focus on autumn season
-        num_days_to_plot=10  # Limit to 10 days for faster processing
+        site_ids=['3794347'],  # Process all multi-orientation sites
+        seasons=['summer', 'autumn', 'winter', 'spring'],  # Focus on autumn season
+        num_days_to_plot=10  # Back to normal processing
     )
     
-    # # run for all sites
+    # run for all sites
     # run_multi_orientation_analysis(
     #     site_ids=None,  # Process all multi-orientation sites (from MULTI_ORIENTATION_SITES dictionary)
     #     seasons=['summer', 'autumn', 'winter', 'spring'],  # Process all seasons
