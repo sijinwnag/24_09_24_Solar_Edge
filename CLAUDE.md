@@ -33,13 +33,14 @@ When working on this project, follow these essential conventions:
 
 ### Quality Standards
 - Maintain research-grade code quality and documentation
-- Ensure reproducibility of all analysis workflows  
+- Ensure reproducibility of all analysis workflows
 - Follow existing project patterns and conventions
 - Validate results against theoretical expectations
 
 ## Repository Structure
 
 - **`Code/`** - Jupyter notebooks containing the main analysis workflows
+  - `README_Multi_Orientation.md` - Documentation for multi-orientation analysis workflow
 - **`Data/`** - Solar telemetry data organized by site ID and season/month
   - Each site folder (e.g., `3455043/`) contains module data files (.PAN) and seasonal subfolders
   - Seasonal folders contain: `inverter_data.csv`, `optimizer_data.csv`, `site_daily_data.csv`
@@ -51,24 +52,26 @@ When working on this project, follow these essential conventions:
 
 ## Code Architecture Evolution
 
-**Object-Oriented Refactoring (January 2025):**
+**Object-Oriented Refactoring (August 2025):**
 The project has evolved from notebook-only analysis to include modular, reusable code:
-- **`mismatch_analysis.py`**: Complete refactored `MismatchAnalysis` class encapsulating the entire workflow (875 lines)
-- **`25_08_04_Mismatch_results_generator_refactored.ipynb`**: Simplified notebook interface using the class
+- **`mismatch_analysis.py`**: Complete refactored `MismatchAnalysis` class encapsulating the entire workflow (38KB)
 - **`refactoring_plan.md`**: Detailed specification for the object-oriented restructure
+- Provides clean separation of data loading, analysis, and visualization
+- Includes comprehensive error handling and type hints
+- Enables easy batch processing of multiple sites
 
 **Latest Development (September 2025):**
 Advanced multi-orientation analysis with machine learning:
-- **`25_09_05_Mismatch_results_generator_multi.py`**: Primary multi-orientation module with K-means clustering (2,064 lines)
-- **`25_09_08_Mismatch_results_generator_multi_consistent.py`**: Consistent multi-string analyzer (1,654 lines)
-- **`consistent_multi_string_analyzer.py`**: Refined multi-string analysis module (1,645 lines)
-- **`README_Multi_Orientation.md`**: Comprehensive documentation for the multi-orientation analysis workflow
+- **`25_09_05_Mismatch_results_generator_multi.py`**: Primary multi-orientation module with K-means clustering (97KB)
+- **`25_09_03_Mismatch_results_generator_multi.ipynb`**: Jupyter notebook interface for multi-orientation analysis (16MB)
+- **`README_Multi_Orientation.md`**: Comprehensive documentation for the multi-orientation analysis workflow (located in Code/ directory)
 - **Enhanced Capabilities**: Per-timestamp K-means clustering, current-based module grouping, and sophisticated mismatch loss estimation for complex multi-orientation solar installations
 
 **Current Development Status:**
-- **Primary Analysis Tool**: `25_09_05_Mismatch_results_generator_multi.py` (95KB) is the most recent and comprehensive module
-- **Notebook Backup**: Original `25_09_03_Mismatch_results_generator_multi.ipynb` (15MB) provides Jupyter interface
-- **Legacy Support**: Original workflows in `25_04_27_Mismatch_results_generator_single.ipynb` remain functional
+- **Primary Analysis Tool**: `25_09_05_Mismatch_results_generator_multi.py` is the most recent and comprehensive module for multi-orientation sites
+- **Notebook Interface**: `25_09_03_Mismatch_results_generator_multi.ipynb` provides interactive Jupyter interface
+- **Single-Orientation Analysis**: `25_04_27_Mismatch_results_generator_single.ipynb` for single-orientation sites
+- **Class-Based Approach**: `mismatch_analysis.py` provides object-oriented interface for programmatic access
 
 **Benefits of New Architecture:**
 - Better separation of concerns and maintainability
@@ -77,12 +80,12 @@ Advanced multi-orientation analysis with machine learning:
 - Easier unit testing and validation
 - Comprehensive documentation
 
-**Usage of Refactored Code:**
+**Usage of Class-Based Code:**
 ```python
 from mismatch_analysis import MismatchAnalysis
 
 # Initialize analysis object
-analysis = MismatchAnalysis(site_id='4111846', season='spring', 
+analysis = MismatchAnalysis(site_id='4111846', season='spring',
                           data_dir=data_dir, results_dir=results_dir, summary_dir=summary_dir)
 
 # Execute complete workflow
@@ -96,28 +99,29 @@ mismatch_loss = analysis.calculate_mismatch_loss()
 
 ## Key Analysis Workflows
 
-### 1. Mismatch Results Generation 
+### 1. Single-Orientation Mismatch Results Generation
 
-**Original Notebook (`25_04_27_Mismatch_results_generator.ipynb`):**
-Primary workflow for processing raw telemetry data:
-- Loads optimizer-level current/voltage data from multiple sites
+**Primary Notebook (`25_04_27_Mismatch_results_generator_single.ipynb`):**
+Main workflow for processing raw telemetry data from single-orientation systems:
+- Loads optimizer-level current/voltage data from sites
 - Reconstructs I-V curves using single-diode model parameters from .PAN files
 - Calculates series-combined system I-V curves
 - Compares sum-of-MPP vs series-connection power to quantify mismatch losses
 - Generates time-series plots and exports results to Excel
 
-**Refactored Workflow (`25_08_04_Mismatch_results_generator_refactored.ipynb` + `mismatch_analysis.py`):**
-Modern object-oriented approach with the same functionality:
+**Object-Oriented Approach (`mismatch_analysis.py`):**
+Modular class-based implementation for single-orientation analysis:
 - Encapsulates entire workflow in `MismatchAnalysis` class
 - Provides clean separation of data loading, analysis, and visualization
 - Includes comprehensive error handling and type hints
 - Enables easy batch processing of multiple sites
 - Maintains full compatibility with existing data formats and outputs
 
-### 2. Multi-Inverter Analysis (`25_09_03_Mismatch_results_generator_multi.ipynb`)
+### 2. Multi-Orientation Analysis (`25_09_03_Mismatch_results_generator_multi.ipynb` and `.py`)
 Enhanced workflow for complex multi-orientation systems:
 - **Automated Site Classification**: Distinguishes single vs. multi-orientation systems
-- **Orientation-Aware Processing**: Handles 3-6 orientation configurations per site
+- **Orientation-Aware Processing**: Handles 3-5 orientation configurations per site
+- **K-means Clustering**: Per-timestamp unsupervised clustering based on panel current values
 - **Advanced Data Handling**: Processes both single CSV files with reporter_id columns and multiple CSV files
 - **Hemisphere-Aware Seasonal Mapping**: Automatic Northern/Southern hemisphere season detection
 - **Results Organization**: Date-based folder structure with timestamped outputs
@@ -125,19 +129,26 @@ Enhanced workflow for complex multi-orientation systems:
 
 **Key Features:**
 ```python
-# Site classification
-single_orientation_site_ids = [4002138, 4034376, 4140175, ...]
-multi_orientation_site_ids = [3455043, 4111492, 4111800, ...]
-multi_orientation_systems_orientations = {
+# Site configuration (from 25_09_05_Mismatch_results_generator_multi.py)
+MULTI_ORIENTATION_SITES = {
     '3455043': 3,  # 3 orientations
     '4111492': 4,  # 4 orientations
-    '4118327': 4   # 4 orientations
+    '4111800': 4,  # 4 orientations
+    '4118327': 4,  # 4 orientations
+    '3794347': 5   # 5 orientations
 }
 
 # Hemisphere-specific seasonal mapping
 season_months_south = {'summer': ['december', 'january', 'february'], ...}
 season_months_north = {'summer': ['june', 'july', 'august'], ...}
 ```
+
+**Multi-Orientation Key Innovation:**
+- Uses machine learning (K-means) to automatically identify orientation groups based on real-time current patterns
+- Calculates series power within each orientation group, then sums across groups
+- Better representation of real multi-orientation systems where different module groups face different irradiance conditions
+- Physical Constraints: Ensures multi-string power ≤ sum-of-MPP baseline
+- Performance: ~20% slower than single-orientation due to per-timestamp clustering overhead
 
 ### 3. Mismatch Results Analysis (`25_07_22_Mismatch_results_analyser.ipynb`)
 Comprehensive analysis of generated results:
@@ -166,29 +177,6 @@ Physics-based circuit simulation for bypass diode validation:
 - **Research Integration**: Validates theoretical bypass diode effects against empirical SolarEdge data
 - **Key Findings**: Progressive power degradation, voltage shift patterns, fill factor impact
 
-### 6. Multi-Orientation Analysis Suite
-**Advanced Python modules for multi-orientation solar array analysis:**
-
-**Primary Module (`25_09_05_Mismatch_results_generator_multi.py` - 2,064 lines):**
-- **K-means Clustering**: Per-timestamp unsupervised clustering based on panel current values
-- **Multi-String Power Calculation**: Calculates series power within each orientation group, then sums across groups
-- **Site Configuration**: Pre-configured for 6 multi-orientation sites with 3-6 different orientations each
-- **Enhanced Visualizations**: Color-coded I-V plots showing module grouping assignments
-- **Comparative Metrics**: Traditional vs. multi-string mismatch loss comparison
-- **Key Innovation**: Uses machine learning to automatically identify orientation groups based on real-time current patterns
-
-**Consistent Multi-String Analyzer (`consistent_multi_string_analyzer.py` - 1,645 lines):**
-- **Refined Algorithm**: Improved consistency in multi-string calculations
-- **Enhanced Error Handling**: Robust handling of edge cases and data quality issues  
-- **Optimized Performance**: Streamlined processing for large datasets
-- **Validation Framework**: Comprehensive validation of physical constraints and results
-
-**Development Versions:**
-- `25_09_08_Mismatch_results_generator_multi_consistent.py`: Intermediate development version (1,654 lines)
-- **Key Benefits**: Better representation of real multi-orientation systems where different module groups face different irradiance conditions
-- **Physical Constraints**: All modules ensure multi-string power ≤ sum-of-MPP baseline
-- **Performance**: ~20% slower than single-orientation due to per-timestamp clustering overhead
-
 ## Data Structure
 
 **Site Data Organization:**
@@ -199,7 +187,7 @@ Data/{site_id}/
 ├── optimizer_metadata.csv
 └── {season_or_month}/
     ├── inverter_data.csv             # System-level power output
-    ├── optimizer_data.csv            # Module-level I/V/T data  
+    ├── optimizer_data.csv            # Module-level I/V/T data
     └── site_daily_data.csv
 ```
 
@@ -213,12 +201,12 @@ Data/{site_id}/
 ```
 PVObject_=pvModule
 NCelS=66                    # Number of cells in series
-RSerie=0.209               # Series resistance (Ω) 
+RSerie=0.209               # Series resistance (Ω)
 RShunt=700                 # Shunt resistance (Ω)
 Gamma=0.976                # Ideality factor (dimensionless)
 Isc=11.160                 # Short-circuit current (A)
 Voc=45.06                  # Open-circuit voltage (V)
-Imp=10.640                 # MPP current (A)  
+Imp=10.640                 # MPP current (A)
 Vmp=37.59                  # MPP voltage (V)
 PNom=400.0                 # Nominal power (W)
 ```
@@ -237,13 +225,13 @@ PNom=400.0                 # Nominal power (W)
 
 ## Commands and Execution
 
-**Primary Analysis Workflow (Original):**
+**Single-Orientation Analysis Workflow:**
 ```bash
 # Navigate to project root
 cd "C:\Users\z5183876\OneDrive - UNSW\Documents\GitHub\24_09_24_Solar_Edge"
 
 # 1. Generate mismatch results from raw telemetry data
-jupyter notebook Code/25_04_27_Mismatch_results_generator.ipynb
+jupyter notebook Code/25_04_27_Mismatch_results_generator_single.ipynb
 
 # 2. Analyze generated results with statistical analysis
 jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
@@ -252,34 +240,18 @@ jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
 jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
 ```
 
-**Refactored Analysis Workflow (Recommended):**
+**Multi-Orientation Analysis Workflow:**
 ```bash
 # Navigate to project root
 cd "C:\Users\z5183876\OneDrive - UNSW\Documents\GitHub\24_09_24_Solar_Edge"
 
-# 1. Generate mismatch results using refactored object-oriented approach
-jupyter notebook Code/25_08_04_Mismatch_results_generator_refactored.ipynb
-
-# 2. Continue with standard analysis workflow
-jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
-
-# 3. (Optional) Validate theoretical predictions with LTSpice simulation
-jupyter notebook Code/25_04_03_module_diode_activation_LTSpice/25_07_22_PV_IV_Curve_Analysis.ipynb
-```
-
-**Multi-Orientation Analysis Workflow (Latest Development):**
-```bash
-# Primary: Advanced Python module with K-means clustering (most recent)
+# Option 1: Run Python module directly (recommended for batch processing)
 python Code/25_09_05_Mismatch_results_generator_multi.py
 
-# Note: The consistent multi-string analyzer (25_09_08_*) may not be present in all installations
-# Check file availability before executing:
-ls Code/25_09_08_Mismatch_results_generator_multi_consistent.py
-
-# Alternative: Jupyter notebook interface (traditional)
+# Option 2: Use Jupyter notebook interface (recommended for interactive analysis)
 jupyter notebook Code/25_09_03_Mismatch_results_generator_multi.ipynb
 
-# Followed by standard analysis
+# Continue with standard analysis
 jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
 ```
 
@@ -291,48 +263,22 @@ sys.path.append('Code')
 from mismatch_analysis import MismatchAnalysis
 
 analysis = MismatchAnalysis(
-    site_id='4111846', 
+    site_id='4111846',
     season='spring',
     data_dir=r"C:\...\Data",
-    results_dir=r"C:\...\Results", 
+    results_dir=r"C:\...\Results",
     summary_dir=r"C:\...\Data\25_05_01_Newsites_summary.xlsx"
 )
 
 analysis.load_and_prepare_data()
-analysis.extract_module_parameters() 
+analysis.extract_module_parameters()
 analysis.run_analysis()
 analysis.generate_plots()
 analysis.save_results()
 
-# Option 2: Multi-orientation analysis using K-means clustering module
-import importlib.util
-
-# Dynamic import due to numeric filename
-spec = importlib.util.spec_from_file_location('multi_analysis', 
-    'Code/25_09_05_Mismatch_results_generator_multi.py')
-multi_analysis = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(multi_analysis)
-
-# Run multi-orientation analysis for specific sites with K-means clustering
-multi_analysis.run_multi_orientation_analysis(
-    site_ids=['3455043', '4111492'],  # Multi-orientation sites
-    seasons=['spring'], 
-    num_days_to_plot=5
-)
-
-# Option 3: Consistent multi-string analyzer (latest development)
-import importlib.util
-
-spec = importlib.util.spec_from_file_location('consistent_analyzer', 
-    'Code/consistent_multi_string_analyzer.py')
-consistent_analyzer = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(consistent_analyzer)
-
-# Run with consistent multi-string approach
-consistent_analyzer.run_consistent_analysis(
-    site_ids=['3455043'], 
-    seasons=['spring']
-)
+# Option 2: Multi-orientation analysis - run module directly via Python
+# The 25_09_05_Mismatch_results_generator_multi.py module can be executed directly
+# or imported for programmatic access. See module documentation for details.
 ```
 
 **Development Environment:**
@@ -367,9 +313,9 @@ ls -la Data/ Results/ Code/
 **Required Python Libraries:**
 - Core: `pandas`, `numpy`, `matplotlib`, `scipy`
 - Solar modeling: `pvlib`
-- Geographic: `geopy`, `kgcpy` (Köppen-Geiger climate classification) 
+- Geographic: `geopy`, `kgcpy` (Köppen-Geiger climate classification)
 - Data processing: `imageio` (for GIF generation)
-- Machine Learning: `scikit-learn` (for K-means clustering in multi-orientation analysis), `numpy` (advanced array operations)
+- Machine Learning: `scikit-learn` (for K-means clustering in multi-orientation analysis)
 - Excel handling: `openpyxl`, `xlrd` (multiple engines for robust file access)
 - Standard: `os`, `sys`, `datetime`, `json`, `requests`, `pathlib`, `shutil`, `tempfile`
 
@@ -381,48 +327,46 @@ ls -la Data/ Results/ Code/
 
 ## Common Development Tasks
 
-**Modern Development Workflow (Recommended):**
-1. **Multi-Orientation Analysis**: Use Python modules for advanced clustering-based analysis
+**Recommended Development Workflow:**
+1. **Multi-Orientation Sites**: Use Python module or notebook for advanced clustering-based analysis
    ```bash
-   python Code/25_09_05_Mismatch_results_generator_multi.py  # K-means clustering (verified present)
-   # Note: consistent_multi_string_analyzer.py may not exist - use the above module
-   ```
-2. **Traditional Analysis**: Use object-oriented class-based approach
-   ```bash
-   # Check if refactored notebook exists:
-   ls Code/25_08_04_Mismatch_results_generator_refactored.ipynb
-   # If not available, use: jupyter notebook Code/mismatch_analysis.py (as module)
-   ```
-3. **Statistical Analysis**: Execute analyzer notebook for cross-site analysis
-   ```bash
-   jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb  # Verified present
+   python Code/25_09_05_Mismatch_results_generator_multi.py  # Python module
+   # OR
+   jupyter notebook Code/25_09_03_Mismatch_results_generator_multi.ipynb  # Interactive
    ```
 
-**Legacy Workflow (Original):**
-1. Execute `25_04_27_Mismatch_results_generator_single.ipynb` to process raw data (verified present)
-2. Execute `25_07_22_Mismatch_results_analyser.ipynb` to analyze results (includes Section 6 for daily analysis)
-3. Results automatically saved to timestamped folders in `Results/v_from_i_combined/`
+2. **Single-Orientation Sites**: Use primary notebook or class-based approach
+   ```bash
+   jupyter notebook Code/25_04_27_Mismatch_results_generator_single.ipynb  # Notebook
+   # OR use mismatch_analysis.py module for programmatic access
+   ```
+
+3. **Statistical Analysis**: Execute analyzer notebook for cross-site analysis
+   ```bash
+   jupyter notebook Code/25_07_22_Mismatch_results_analyser.ipynb
+   ```
 
 **Daily Analysis Workflow:**
 - Use Section 6 of `25_07_22_Mismatch_results_analyser.ipynb` for daily analysis
 - Implements daily-level granularity instead of seasonal aggregation
-- Output folder: `Results/daily_analysis_results/` (contains daily_mismatch_summary.xlsx)
+- Output folder: Results directory (check analyzer notebook for exact path)
 - Requires "no_diode" filtered combined data files from generator notebook
 - Includes optimizations: vectorized operations, caching, reduced plotting
 
 **Processing New Site Data:**
 1. Add site folder to `Data/` with proper structure
-2. Update `site_ids` list in generator notebook (cell defining `site_ids = ['4111846']`)
+2. Update `site_ids` list in generator notebook or module configuration
 3. Ensure .PAN file contains required parameters (RSerie, RShunt, NCelS, Gamma)
+4. For multi-orientation sites, add site ID to MULTI_ORIENTATION_SITES dictionary
 
-**Configuration Variables (Generator Notebook):**
-- **Site Selection**: `site_ids = ['4111846']` - Configure which sites to process
+**Configuration Variables (Generator Workflows):**
+- **Site Selection**: Configure which sites to process in notebook/module
 - **Directory Paths**: `data_dir`, `base_dir`, `results_dir`, `summary_dir` - File system locations
-- **Analysis Period**: `num_days_to_plot = 10` - Limit processing time for large datasets
-- **Plot Boundaries**: 
-  - Module-level: `y_limit_module = (0,15)`, `x_limit_module = (0,60)`
-  - System-level: `y_limit_inverter = (0,17)`, `x_limit_inverter = (0,1200)`
-- **Physics Settings**: 
+- **Analysis Period**: `num_days_to_plot` - Limit processing time for large datasets
+- **Plot Boundaries**:
+  - Module-level: `y_limit_module`, `x_limit_module`
+  - System-level: `y_limit_inverter`, `x_limit_inverter`
+- **Physics Settings**:
   - `use_dynamic_vth = True` - Calculate thermal voltage from actual temperature
   - `use_a_T = True` - Use ambient temperature when module temperature sensors appear faulty
 - **Seasonal Mapping**: Automatic Northern/Southern hemisphere season detection based on country
@@ -451,10 +395,10 @@ The analysis pipeline consists of three main components working together:
 Raw Telemetry Data (Data/{site_id}/)
 ├── {site_id}.PAN files (module parameters)
 ├── {season}/optimizer_data.csv (I,V,T,P per optimizer)
-├── {season}/inverter_data.csv (system-level data) 
+├── {season}/inverter_data.csv (system-level data)
 └── {season}/site_daily_data.csv (daily aggregates)
     ↓
-Generator Notebook (25_04_27_Mismatch_results_generator.ipynb)
+Generator Notebook (25_04_27_Mismatch_results_generator_single.ipynb)
 ├── I-V Curve Reconstruction Engine
 │   ├── Single-diode parameter calculation (I0, IL functions)
 │   ├── pvlib.pvsystem.v_from_i() integration
@@ -506,7 +450,7 @@ Integration with Empirical Analysis
 ```
 
 **Cross-File Dependencies:**
-- Generator notebook outputs become inputs for analyzer notebook  
+- Generator notebook outputs become inputs for analyzer notebook
 - Daily analysis (Section 6) requires "no_diode" filtered files from generator
 - Site summary Excel file (`25_05_01_Newsites_summary.xlsx`) used across all workflows
 - Climate zone data cached and reused between analysis runs
@@ -521,7 +465,7 @@ Integration with Empirical Analysis
 
 **Critical Function Architecture:**
 
-**Single-Diode Model Parameter Extraction (`Code/25_04_27_Mismatch_results_generator.ipynb`):**
+**Single-Diode Model Parameter Extraction:**
 ```python
 def I0(I, V, Rs, Rsh, n, N, vth):
     """Calculate dark saturation current from MPP data"""
@@ -548,14 +492,14 @@ sum_of_mpp = sum(Vi * Ii for all optimizers i)  # Independent operation
 series_mpp = max(Vseries * I) where Vseries = sum(Vi(I))  # Series constraint
 
 # Mismatch loss percentage:
-mismatch_loss = (sum_of_mpp - series_mmp) / sum_of_mpp * 100
+mismatch_loss = (sum_of_mpp - series_mpp) / sum_of_mpp * 100
 ```
 
 **Key Insight**: Series-connected modules operate at the same current, forcing higher-performing modules to operate below their individual MPP, creating mismatch losses.
 
 **Data Quality Filtering:**
 - Removes timestamps where all optimizers report zero power
-- Filters out diode activation events for "true" mismatch analysis  
+- Filters out diode activation events for "true" mismatch analysis
 - Handles missing data with appropriate NaN treatment
 - Temperature sensor validation and optional ambient temperature substitution (`use_a_T = True`)
 
@@ -644,12 +588,12 @@ def detect_diode_activation(voc_data, isc_data):
     voc_q1, voc_q3 = np.percentile(voc_data, [25, 75])
     voc_iqr = voc_q3 - voc_q1
     voc_outliers = (voc_data > voc_q3 + 1.5*voc_iqr) | (voc_data < voc_q1 - 1.5*voc_iqr)
-    
-    # Isc outliers: IQR factor 1.5 (low) and 3.0 (high) with minimum IQR enforcement  
+
+    # Isc outliers: IQR factor 1.5 (low) and 3.0 (high) with minimum IQR enforcement
     isc_q1, isc_q3 = np.percentile(isc_data, [25, 75])
     isc_iqr = max(isc_q3 - isc_q1, min_iqr_threshold)
     isc_outliers = (isc_data < isc_q1 - 1.5*isc_iqr) | (isc_data > isc_q3 + 3.0*isc_iqr)
-    
+
     # Diode activation: Voc loss without Isc change, or Voc high + Isc low
     return voc_outliers | isc_outliers
 ```
@@ -677,7 +621,7 @@ def get_climate_zone(address):
 
 **Theoretical Validation via LTSpice:**
 - **34.7% power loss** with 1 bypass diode activated (validated against 4,851 simulation points)
-- **41.8% power loss** with 2 bypass diodes activated 
+- **41.8% power loss** with 2 bypass diodes activated
 - **Progressive degradation patterns** match empirical SolarEdge observations
 - **Voltage shift analysis** confirms bypass diode activation signatures
 

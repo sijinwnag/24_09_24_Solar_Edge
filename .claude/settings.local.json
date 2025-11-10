@@ -25,7 +25,10 @@
       "Bash(pip install:*)",
       "WebSearch",
       "Bash(tasklist)",
-      "Bash(timeout 120 python \"25_09_05_Mismatch_results_generator_multi.py\")"
+      "Bash(timeout 120 python \"25_09_05_Mismatch_results_generator_multi.py\")",
+      "Bash(cat:*)",
+      "Bash(/tmp/claude_md_backup.txt)",
+      "Bash(timeout 120 python:*)"
     ],
     "deny": []
   },
