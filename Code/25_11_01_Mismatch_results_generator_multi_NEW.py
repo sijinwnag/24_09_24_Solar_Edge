@@ -2096,8 +2096,8 @@ if __name__ == "__main__":
     print("\n*** UNIT TEST MODE ***")
     print("Testing with site 4118479 (2 orientations, NAM/Arizona, spring season, 3 days)")
     run_multi_orientation_analysis(
-        site_ids=None,  # Test site: 2 orientations
-        seasons=['summer/'],    # Single season for quick test
+        site_ids=['4108846'],  # Test site: 2 orientations
+        seasons=['autumn'],    # Single season for quick test
         num_days_to_plot=10    # Reduced for fast execution
     )
     
